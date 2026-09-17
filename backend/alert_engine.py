@@ -1,19 +1,25 @@
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class AlertEngine:
+    LATEST_FIRMWARE = {
+        "pure40": "20210831.1.0.15.0",
+        "pure6e": "1.0.11b",
+        "pure6s": "20210831.1.1.16.0",
+        "airtest": "20201031.1.0.0.1"
+    }
+
     @staticmethod
     def evaluate_device_alerts(
         project: Dict[str, Any],
-        room_devices: Dict[str, List[Dict[str, Any]]]
+        room_devices: Dict[str, List[Dict[str, Any]]],
+        billing_info: Optional[Dict[str, Any]] = None,
+        minierp_devices: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
         alerts = []
         all_devices = []
         for dev_list in room_devices.values():
             all_devices.extend(dev_list)
-        
-        if not all_devices:
-            return alerts
 
         # 1. Rule: Blackout Warning (100% devices offline at site with >= 2 devices)
         total_devs = len(all_devices)
@@ -56,7 +62,7 @@ class AlertEngine:
                         "created_at": datetime.now(timezone.utc).isoformat()
                     })
 
-        # 3. Rule: Environmental Breach (PM2.5 > 15 ug/m3 or CO2 > 1000 ppm)
+        # 3. Rule: Environmental Breach (PM2.5 > 25 ug/m3 or CO2 > 1200 ppm)
         for room_name, devs in room_devices.items():
             monitors = [d for d in devs if d.get("category_code") == "airmon"]
             for m in monitors:
@@ -83,7 +89,7 @@ class AlertEngine:
                         "severity": "WARNING",
                         "type": "VENTILATION_ALERT_CO2",
                         "title": f"High CO₂ Accumulation ({co2} ppm) in {room_name}",
-                        "message": f"Stagnant air in '{room_name}' exceeds 1,200 ppm. Ventilation/door opening recommended.",
+                        "message": f"Stagnant air in '{room_name}' exceeds 1,200 ppm. Ventilation or door opening recommended.",
                         "project_id": project.get("id"),
                         "project_name": project.get("project_name"),
                         "client_name": project.get("client_name"),
@@ -112,5 +118,59 @@ class AlertEngine:
                         "device_name": p.get("device_name"),
                         "created_at": datetime.now(timezone.utc).isoformat()
                     })
+
+        # 5. Rule: Electrical & Motor Health Anomaly
+        for room_name, devs in room_devices.items():
+            purifiers = [d for d in devs if d.get("category_code") == "airpure"]
+            for p in purifiers:
+                speed = p.get("speed") or 0
+                kwh = p.get("total_powerconsumption") or 0.0
+                conn = p.get("connectivity")
+                # If unit is online, speed set > 0, but power consumption recorded is exactly 0 after long activation
+                if conn == "online" and speed > 0 and float(kwh) == 0.0 and p.get("activation_date"):
+                    alerts.append({
+                        "severity": "INFO",
+                        "type": "ZERO_KWH_ANOMALY",
+                        "title": f"Zero Power Draw on {p.get('device_name')}",
+                        "message": f"Purifier in '{room_name}' is set to Speed {speed} but reports 0.00 kWh total consumption. Verify fan motor relay.",
+                        "project_id": project.get("id"),
+                        "project_name": project.get("project_name"),
+                        "client_name": project.get("client_name"),
+                        "room_name": room_name,
+                        "device_name": p.get("device_name"),
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    })
+
+        # 6. Rule: Payment Overdue Alert (From MongoDB Billing)
+        if billing_info and billing_info.get("billing_status") == "OVERDUE_UNPAID":
+            unpaid_cnt = billing_info.get("unpaid_invoices", 0)
+            alerts.append({
+                "severity": "CRITICAL",
+                "type": "PAYMENT_OVERDUE",
+                "title": f"Delinquent Subscription: {unpaid_cnt} Overdue Invoice(s)",
+                "message": f"Client has {unpaid_cnt} unpaid or failed invoice(s) in MongoDB billing system.",
+                "project_id": project.get("id"),
+                "project_name": project.get("project_name"),
+                "client_name": project.get("client_name"),
+                "location_uuid": project.get("location_uuid"),
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+
+        # 7. Rule: Mini-ERP Hardware Allocation Mismatch
+        if minierp_devices is not None:
+            minierp_count = len(minierp_devices)
+            telemetry_count = total_devs
+            if minierp_count > 0 and telemetry_count == 0:
+                alerts.append({
+                    "severity": "WARNING",
+                    "type": "UNLINKED_TELEMETRY",
+                    "title": f"No Live Telemetry ({minierp_count} units planned in Mini-ERP)",
+                    "message": f"Mini-ERP registers {minierp_count} planned hardware unit(s) but no active IoT devices are transmitting in MySQL.",
+                    "project_id": project.get("id"),
+                    "project_name": project.get("project_name"),
+                    "client_name": project.get("client_name"),
+                    "location_uuid": project.get("location_uuid"),
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
 
         return alerts

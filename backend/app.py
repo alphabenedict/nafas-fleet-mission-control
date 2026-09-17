@@ -8,8 +8,8 @@ from backend.aggregator import fleet_engine
 
 app = FastAPI(
     title="Nafas Clean Air Zone™ Fleet Mission Control API",
-    version="1.0.0",
-    description="Real-Time Fleet Health & Automated Maintenance Cycle Engine"
+    version="1.1.0",
+    description="Triple-Database Fleet Intelligence, Health & Automated Maintenance Cycle Engine"
 )
 
 app.add_middleware(
@@ -20,12 +20,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import threading
+
 @app.on_event("startup")
 def startup_event():
-    try:
-        fleet_engine.refresh(force=True)
-    except Exception as e:
-        print(f"Warning: Initial cache prime failed: {e}")
+    # Prime cache in background thread so server becomes immediately available
+    threading.Thread(target=fleet_engine.refresh, kwargs={"force": True}, daemon=True).start()
 
 @app.get("/health")
 def health_check():
@@ -56,14 +56,22 @@ def get_clients(
     search: Optional[str] = None,
     status: Optional[str] = None,
     maint: Optional[str] = None,
-    segment: Optional[str] = None
+    segment: Optional[str] = None,
+    billing: Optional[str] = None,
+    firmware: Optional[str] = None
 ):
     fleet_engine.refresh()
     clients = fleet_engine.cached_clients
 
     if search:
         s = search.lower()
-        clients = [c for c in clients if s in c["client_name"].lower() or s in c["project_name"].lower() or s in (c.get("city") or "").lower()]
+        clients = [
+            c for c in clients 
+            if s in c["client_name"].lower() 
+            or s in c["project_name"].lower() 
+            or s in (c.get("city") or "").lower()
+            or s in (c.get("location_uuid") or "").lower()
+        ]
 
     if status == "critical":
         clients = [c for c in clients if c.get("has_critical_alert")]
@@ -80,12 +88,23 @@ def get_clients(
     if segment:
         clients = [c for c in clients if c.get("segment", "").lower() == segment.lower()]
 
+    if billing == "paid":
+        clients = [c for c in clients if c.get("billing_status") == "PAID"]
+    elif billing == "unpaid":
+        clients = [c for c in clients if c.get("billing_status") == "OVERDUE_UNPAID"]
+    elif billing == "pending":
+        clients = [c for c in clients if c.get("billing_status") == "PAYMENT_PENDING"]
+
+    if firmware == "outdated":
+        clients = [c for c in clients if c.get("outdated_fw_count", 0) > 0]
+
     return {
         "total": len(clients),
         "clients": clients
     }
 
 @app.get("/api/fleet/client/{project_id}")
+@app.get("/api/fleet/clients/{project_id}")
 def get_client_detail(project_id: int):
     fleet_engine.refresh()
     detail = fleet_engine.cached_client_details.get(project_id)

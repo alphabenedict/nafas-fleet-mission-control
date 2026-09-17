@@ -6,7 +6,7 @@ from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, List, Any, Optional
 import psycopg2.extras
-from backend.database import get_mysql_connection, get_pg_connection
+from backend.database import get_mysql_connection, get_pg_connection, get_mongo_client
 from backend.alert_engine import AlertEngine
 
 logger = logging.getLogger("fleet.aggregator")
@@ -31,7 +31,6 @@ class FleetAggregator:
         self.cached_alerts: List[Dict[str, Any]] = []
         self.cached_client_details: Dict[int, Dict[str, Any]] = {}
         self._lock = threading.Lock()
-        self._is_refreshing = False
 
     def is_cache_valid(self) -> bool:
         if not self.last_updated:
@@ -48,11 +47,11 @@ class FleetAggregator:
             self._do_refresh()
 
     def _do_refresh(self) -> None:
-        logger.info("Refreshing Fleet Intelligence Cache from MySQL & NeonDB...")
+        logger.info("Refreshing Triple-Database Fleet Intelligence Cache (MySQL + NeonDB + MongoDB)...")
         start_time = time.time()
 
         try:
-            # 1. Fetch from NeonDB
+            # 1. Fetch from NeonDB (Projects, Milestones, Reports, and Device Specs)
             pg_conn = get_pg_connection()
             pg_cur = pg_conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
@@ -107,36 +106,146 @@ class FleetAggregator:
                         reports_by_client_name[c_name] = []
                     reports_by_client_name[c_name].append(r_dict)
 
+            # Mini-ERP Planned Hardware Specs (devices joined with rooms)
+            pg_cur.execute("""
+                SELECT d.id, d.room_id, r.project_id, 
+                       COALESCE(r.room_name, 'Room') as room_name,
+                       d.device_id, d.device_item_type, d.device_type, d.device_status
+                FROM devices d
+                JOIN rooms r ON r.id = d.room_id;
+            """)
+            raw_minierp_devices = pg_cur.fetchall()
+            minierp_devices_by_project = {}
+            for d in raw_minierp_devices:
+                pid = d["project_id"]
+                if pid not in minierp_devices_by_project:
+                    minierp_devices_by_project[pid] = []
+                minierp_devices_by_project[pid].append(serialize_obj(dict(d)))
+
             pg_conn.close()
 
-            # 2. Extract active location_uuids for fast MySQL query
+            # 2. Fetch from MongoDB (Billing, Invoices, Subscriptions)
+            client_billing_map = {}
+            try:
+                m_client = get_mongo_client()
+                m_db = m_client["billing"]
+                mongo_invoices = list(m_db.invoices.find({}, {
+                    "uuid": 1,
+                    "invoice_number": 1,
+                    "status": 1,
+                    "invoice_due_date": 1,
+                    "paid_amount": 1,
+                    "paid_at": 1,
+                    "client": 1,
+                    "pic": 1,
+                    "subscription_uuid": 1,
+                    "account_uuid": 1,
+                    "items": 1
+                }))
+                m_client.close()
+
+                for inv in mongo_invoices:
+                    c_info = inv.get("client") or {}
+                    c_name = (c_info.get("name") or "").strip()
+                    if not c_name:
+                        pic = inv.get("pic") or {}
+                        c_name = (pic.get("name") or "").strip()
+                    if not c_name:
+                        continue
+
+                    norm_key = c_name.lower()
+                    status = inv.get("status")
+                    if norm_key not in client_billing_map:
+                        client_billing_map[norm_key] = {
+                            "client_name": c_name,
+                            "total_invoices": 0,
+                            "paid_invoices": 0,
+                            "unpaid_invoices": 0,
+                            "waiting_payment": 0,
+                            "total_paid_amount": 0.0,
+                            "latest_due_date": None,
+                            "latest_invoice_number": inv.get("invoice_number"),
+                            "has_overdue": False,
+                            "billing_status": "PAID"
+                        }
+                    b_entry = client_billing_map[norm_key]
+                    b_entry["total_invoices"] += 1
+                    if status == "paid":
+                        b_entry["paid_invoices"] += 1
+                        b_entry["total_paid_amount"] += float(inv.get("paid_amount") or 0.0)
+                    elif status in ["unpaid", "failed", "failed_final"]:
+                        b_entry["unpaid_invoices"] += 1
+                        b_entry["has_overdue"] = True
+                    elif status in ["waiting_payment", "waiting_payment_channel", "generated"]:
+                        b_entry["waiting_payment"] += 1
+                    
+                    due_date = inv.get("invoice_due_date")
+                    if due_date:
+                        b_entry["latest_due_date"] = str(due_date)[:10]
+
+                for k, v in client_billing_map.items():
+                    if v["has_overdue"] or v["unpaid_invoices"] > 0:
+                        v["billing_status"] = "OVERDUE_UNPAID"
+                    elif v["waiting_payment"] > 0:
+                        v["billing_status"] = "PAYMENT_PENDING"
+                    elif v["paid_invoices"] > 0:
+                        v["billing_status"] = "PAID"
+                    else:
+                        v["billing_status"] = "B2B_OFFLINE"
+
+            except Exception as mongo_err:
+                logger.warning(f"MongoDB Billing sync skipped/fallback: {mongo_err}")
+
+            # 3. Extract active location_uuids for targeted MySQL query
             loc_uuids = [p["location_uuid"] for p in raw_projects if p["location_uuid"] and len(str(p["location_uuid"])) > 10]
 
-            # Fetch from MySQL (targeted by location_uuid)
-            my_conn = get_mysql_connection()
+            # Fetch from MySQL in resilient chunks of 25 location_uuids
             raw_devices = []
             rooms_by_uuid = {}
             if loc_uuids:
-                with my_conn.cursor() as cursor:
-                    # Get rooms for these locations
-                    cursor.execute("""
-                        SELECT uuid, location_uuid, room_name
-                        FROM nafas_mydevice.tb_role_room
-                        WHERE location_uuid IN %s;
-                    """, (tuple(loc_uuids),))
-                    for rm in cursor.fetchall():
-                        rooms_by_uuid[rm["uuid"]] = rm["room_name"]
+                chunk_size = 25
+                chunks = [loc_uuids[i:i + chunk_size] for i in range(0, len(loc_uuids), chunk_size)]
+                
+                for chunk in chunks:
+                    # Rooms chunk
+                    for attempt in range(3):
+                        try:
+                            m_conn = get_mysql_connection()
+                            with m_conn.cursor() as cursor:
+                                cursor.execute("""
+                                    SELECT uuid, location_uuid, room_name
+                                    FROM nafas_mydevice.tb_role_room
+                                    WHERE location_uuid IN %s;
+                                """, (tuple(chunk),))
+                                for rm in cursor.fetchall():
+                                    rooms_by_uuid[rm["uuid"]] = rm["room_name"]
+                            m_conn.close()
+                            break
+                        except Exception as e:
+                            logger.warning(f"MySQL rooms chunk query attempt {attempt+1} failed: {e}")
+                            time.sleep(1)
 
-                    # Get devices for these locations (excluding heavy device_config)
-                    cursor.execute("""
-                        SELECT id, uuid, vendor_device_id, device_name, device_type,
-                               category_code, status, connectivity, location_uuid,
-                               room_uuid, device_state, measurement_current, updated_at
-                        FROM nafas_mydevice.tb_mydevice
-                        WHERE is_deleted = 0 AND status = 'activated' AND location_uuid IN %s;
-                    """, (tuple(loc_uuids),))
-                    raw_devices = cursor.fetchall()
-            my_conn.close()
+                    # Devices chunk (including firmware, kWh, speed, mode)
+                    for attempt in range(3):
+                        try:
+                            m_conn = get_mysql_connection()
+                            with m_conn.cursor() as cursor:
+                                cursor.execute("""
+                                    SELECT id, uuid, vendor_device_id, device_name, device_type,
+                                           category_code, status, connectivity, location_uuid,
+                                           room_uuid, device_firmware, device_series, total_powerconsumption,
+                                           speed, mode, activation_date,
+                                           device_state, measurement_current, updated_at
+                                    FROM nafas_mydevice.tb_mydevice
+                                    WHERE is_deleted = 0 AND status = 'activated' AND location_uuid IN %s;
+                                """, (tuple(chunk),))
+                                devs = cursor.fetchall()
+                                raw_devices.extend(devs)
+                            m_conn.close()
+                            break
+                        except Exception as e:
+                            logger.warning(f"MySQL devices chunk query attempt {attempt+1} failed: {e}")
+                            time.sleep(1)
 
             # Index MySQL devices by location_uuid
             devices_by_loc = {}
@@ -148,6 +257,16 @@ class FleetAggregator:
                     
                     dev_dict = dict(dev)
                     dev_dict["room_name"] = rooms_by_uuid.get(dev["room_uuid"]) or "Main Room"
+                    
+                    # Convert power consumption
+                    dev_dict["total_powerconsumption"] = float(dev_dict.get("total_powerconsumption") or 0.0)
+
+                    # Determine firmware health
+                    d_type = (dev_dict.get("device_type") or "").lower()
+                    d_fw = dev_dict.get("device_firmware")
+                    latest_fw = AlertEngine.LATEST_FIRMWARE.get(d_type)
+                    dev_dict["latest_firmware"] = latest_fw
+                    dev_dict["is_firmware_outdated"] = (d_fw != latest_fw) if (d_fw and latest_fw) else False
                     
                     for field in ["device_state", "measurement_current"]:
                         val = dev_dict.get(field)
@@ -162,13 +281,17 @@ class FleetAggregator:
                     dev_dict = serialize_obj(dev_dict)
                     devices_by_loc[loc].append(dev_dict)
 
-            # 3. Process Projects & Reconcile
+            # 4. Process Projects & Reconcile
             processed_clients = []
             all_alerts = []
             total_active_devices = 0
             total_online_devices = 0
+            total_fleet_kwh = 0.0
             overdue_services_count = 0
             critical_alerts_count = 0
+            paid_clients_count = 0
+            unpaid_clients_count = 0
+            pending_clients_count = 0
 
             today = date.today()
 
@@ -180,14 +303,54 @@ class FleetAggregator:
                 start_date = p["start_date"]
 
                 loc_devs = devices_by_loc.get(loc_uuid, [])
+                minierp_devs = minierp_devices_by_project.get(pid, [])
                 
+                # Match MongoDB billing info for this client
+                client_billing = None
+                for target_str in [c_name.lower(), p_name.lower()]:
+                    if target_str in client_billing_map:
+                        client_billing = client_billing_map[target_str]
+                        break
+                    # Fuzzy match check
+                    for b_key, b_val in client_billing_map.items():
+                        if len(b_key) > 4 and (b_key in target_str or target_str in b_key):
+                            client_billing = b_val
+                            break
+                    if client_billing:
+                        break
+
+                if not client_billing:
+                    client_billing = {
+                        "billing_status": "B2B_OFFLINE",
+                        "paid_invoices": 0,
+                        "unpaid_invoices": 0,
+                        "waiting_payment": 0,
+                        "total_paid_amount": 0.0,
+                        "latest_due_date": None
+                    }
+
+                b_status = client_billing["billing_status"]
+                if b_status == "PAID":
+                    paid_clients_count += 1
+                elif b_status == "OVERDUE_UNPAID":
+                    unpaid_clients_count += 1
+                elif b_status == "PAYMENT_PENDING":
+                    pending_clients_count += 1
+
                 # Group devices by room
                 room_map = {}
+                project_kwh = 0.0
+                outdated_fw_count = 0
                 for d in loc_devs:
                     r_name = d.get("room_name") or "Main Area"
                     if r_name not in room_map:
                         room_map[r_name] = []
                     room_map[r_name].append(d)
+                    project_kwh += float(d.get("total_powerconsumption") or 0.0)
+                    if d.get("is_firmware_outdated"):
+                        outdated_fw_count += 1
+
+                total_fleet_kwh += project_kwh
 
                 # Calculate device stats
                 dev_count = len(loc_devs)
@@ -205,7 +368,6 @@ class FleetAggregator:
                 p_reports = reports_by_project.get(pid, []) or reports_by_client_name.get(c_name.lower(), [])
                 latest_report = p_reports[0] if p_reports else None
 
-                # Next maintenance target date logic
                 next_maint_date = None
                 next_maint_type = "Filter Cleaning"
                 
@@ -240,7 +402,6 @@ class FleetAggregator:
                     next_maint_date = raw_sd + timedelta(days=120)
                     next_maint_type = "First Maintenance"
 
-                # Calculate countdown status
                 days_remaining = None
                 maint_status = "ON_TRACK"
                 if next_maint_date:
@@ -253,19 +414,27 @@ class FleetAggregator:
                     else:
                         maint_status = "ON_TRACK"
 
-                # Evaluate Bad Alerts
+                # Evaluate Bad Alerts (with electrical, billing, and ERP mismatch rules)
                 project_dict = {
                     "id": pid,
                     "project_name": p_name,
                     "client_name": c_name,
                     "location_uuid": loc_uuid
                 }
-                project_alerts = AlertEngine.evaluate_device_alerts(project_dict, room_map)
+                project_alerts = AlertEngine.evaluate_device_alerts(
+                    project_dict, room_map, billing_info=client_billing, minierp_devices=minierp_devs
+                )
                 all_alerts.extend(project_alerts)
 
                 for a in project_alerts:
                     if a.get("severity") == "CRITICAL":
                         critical_alerts_count += 1
+
+                # Summarize Mini-ERP device models
+                minierp_models = {}
+                for md in minierp_devs:
+                    m_label = md.get("device_item_type") or md.get("device_type") or "Unit"
+                    minierp_models[m_label] = minierp_models.get(m_label, 0) + 1
 
                 client_card = {
                     "project_id": pid,
@@ -282,6 +451,12 @@ class FleetAggregator:
                     "online_count": online_count,
                     "offline_count": offline_count,
                     "uptime_pct": uptime_pct,
+                    "total_kwh": round(project_kwh, 2),
+                    "outdated_fw_count": outdated_fw_count,
+                    "billing_status": b_status,
+                    "billing_summary": client_billing,
+                    "minierp_planned_count": len(minierp_devs),
+                    "minierp_models": minierp_models,
                     "maint_target_date": str(next_maint_date) if next_maint_date else None,
                     "maint_type": next_maint_type,
                     "maint_days_remaining": days_remaining,
@@ -299,6 +474,8 @@ class FleetAggregator:
                     "rooms": room_map,
                     "milestones": p_milestones,
                     "fieldwork_reports": p_reports,
+                    "minierp_devices": minierp_devs,
+                    "billing": client_billing,
                     "alerts": project_alerts
                 }
 
@@ -311,6 +488,10 @@ class FleetAggregator:
                 "total_online_devices": total_online_devices,
                 "total_offline_devices": total_active_devices - total_online_devices,
                 "global_uptime_pct": global_online_pct,
+                "total_fleet_kwh": round(total_fleet_kwh, 1),
+                "paid_clients_count": paid_clients_count,
+                "unpaid_clients_count": unpaid_clients_count,
+                "pending_clients_count": pending_clients_count,
                 "total_alerts": len(all_alerts),
                 "critical_alerts_count": critical_alerts_count,
                 "overdue_services_count": overdue_services_count,
@@ -318,13 +499,30 @@ class FleetAggregator:
                 "execution_time_ms": round((time.time() - start_time) * 1000, 1)
             }
             self.cached_clients = processed_clients
-            self.cached_alerts = sorted(all_alerts, key=lambda a: (0 if a.get("severity") == "CRITICAL" else 1, a.get("created_at") or ""))
+            self.cached_alerts = sorted(all_alerts, key=lambda a: (0 if a.get("severity") == "CRITICAL" else (1 if a.get("severity") == "WARNING" else 2), a.get("created_at") or ""))
             self.last_updated = datetime.now(timezone.utc)
 
-            logger.info(f"Fleet Intelligence refreshed in {self.cached_summary['execution_time_ms']}ms. {len(processed_clients)} clients, {total_active_devices} devices, {len(all_alerts)} alerts.")
+            logger.info(f"Triple-Database Fleet Intelligence refreshed in {self.cached_summary['execution_time_ms']}ms. {len(processed_clients)} clients, {total_active_devices} devices, {len(all_alerts)} alerts, {round(total_fleet_kwh,1)} kWh.")
 
         except Exception as e:
             logger.error(f"Error during Fleet Intelligence refresh: {e}", exc_info=True)
-            raise
+            if not self.cached_summary:
+                self.cached_summary = {
+                    "total_clients": len(self.cached_clients),
+                    "total_active_devices": 0,
+                    "total_online_devices": 0,
+                    "total_offline_devices": 0,
+                    "global_uptime_pct": 0.0,
+                    "total_fleet_kwh": 0.0,
+                    "paid_clients_count": 0,
+                    "unpaid_clients_count": 0,
+                    "pending_clients_count": 0,
+                    "total_alerts": 0,
+                    "critical_alerts_count": 0,
+                    "overdue_services_count": 0,
+                    "last_refreshed": datetime.now(timezone.utc).isoformat(),
+                    "execution_time_ms": 0.0,
+                    "error": str(e)
+                }
 
 fleet_engine = FleetAggregator()

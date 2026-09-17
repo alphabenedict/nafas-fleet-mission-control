@@ -1,7 +1,9 @@
 import os
+import urllib.parse
 import pymysql
 import psycopg2
 import psycopg2.extras
+from pymongo import MongoClient
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,6 +20,13 @@ PG_USER = os.getenv("PG_USER", "alpha_readonly")
 PG_PASSWORD = os.getenv("PG_PASSWORD", "Ym94rWsLLNcRWRsD")
 PG_DB = os.getenv("PG_DB", "neondb")
 
+MONGO_HOST = os.getenv("MONGO_HOST", "20.24.141.186")
+MONGO_PORT = int(os.getenv("MONGO_PORT", 27017))
+MONGO_USER = os.getenv("MONGO_USER", "alpha_readonly")
+MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "Ym94rWsLLNcRWRsD")
+MONGO_AUTH_DB = os.getenv("MONGO_AUTH_DB", "admin")
+MONGO_DB = os.getenv("MONGO_DB", "billing")
+
 def get_mysql_connection():
     return pymysql.connect(
         host=MYSQL_HOST,
@@ -27,7 +36,7 @@ def get_mysql_connection():
         database=MYSQL_DB,
         cursorclass=pymysql.cursors.DictCursor,
         connect_timeout=30,
-        read_timeout=60,
+        read_timeout=90,
         write_timeout=30
     )
 
@@ -40,3 +49,11 @@ def get_pg_connection():
         dbname=PG_DB,
         connect_timeout=30
     )
+
+def get_mongo_client():
+    uri = f"mongodb://{urllib.parse.quote_plus(MONGO_USER)}:{urllib.parse.quote_plus(MONGO_PASSWORD)}@{MONGO_HOST}:{MONGO_PORT}/?authSource={MONGO_AUTH_DB}&serverSelectionTimeoutMS=20000&connectTimeoutMS=20000"
+    return MongoClient(uri)
+
+def get_mongo_db(db_name: str = None):
+    client = get_mongo_client()
+    return client[db_name or MONGO_DB]
