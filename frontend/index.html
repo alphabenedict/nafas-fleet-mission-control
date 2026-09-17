@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nafas Clean Air Zone™ | Fleet Mission Control</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-950 text-slate-100 font-['Plus_Jakarta_Sans',sans-serif] antialiased min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
+
+  <!-- TOP APP BAR -->
+  <header class="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center font-black text-slate-950 text-base shadow-lg shadow-emerald-500/20">
+          N
+        </div>
+        <div>
+          <div class="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+            <span>Clean Air Zone™ Fleet Mission Control</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">LIVE OPS</span>
+          </div>
+          <div class="text-[11px] text-slate-400">Real-Time Uptime, Bad Alert Engine & Automated Maintenance Cycles</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center gap-3">
+      <div class="hidden md:flex items-center gap-2 text-xs font-mono bg-slate-950/60 border border-slate-800 px-3 py-1.5 rounded-lg text-slate-400">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="vpn-status">VPN: Alpha Azure</span>
+        <span class="text-slate-600">|</span>
+        <span id="last-sync-time">Syncing...</span>
+      </div>
+
+      <button id="refresh-btn" onclick="triggerManualRefresh()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md shadow-emerald-600/20 active:scale-95">
+        <svg id="refresh-icon" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        <span>Sync Telemetry</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+
+    <!-- KPI ROW -->
+    <section class="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <!-- KPI 1: Active Clients -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-all">
+        <div class="text-xs text-slate-400 font-medium">Active CAZ Clients</div>
+        <div id="kpi-clients" class="text-2xl font-bold text-white mt-1 font-mono tracking-tight">--</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Projects in Mini-ERP</div>
+        <div class="absolute -right-2 -bottom-2 w-12 h-12 bg-emerald-500/5 rounded-full blur-lg group-hover:bg-emerald-500/10 transition-all"></div>
+      </div>
+
+      <!-- KPI 2: Total Devices -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-all">
+        <div class="text-xs text-slate-400 font-medium">Deployed Devices</div>
+        <div id="kpi-devices" class="text-2xl font-bold text-white mt-1 font-mono tracking-tight">--</div>
+        <div id="kpi-device-sub" class="text-[11px] text-slate-500 mt-0.5">-- Online / -- Offline</div>
+      </div>
+
+      <!-- KPI 3: Global Uptime -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-all">
+        <div class="text-xs text-slate-400 font-medium">Global Fleet Uptime</div>
+        <div id="kpi-uptime" class="text-2xl font-bold text-emerald-400 mt-1 font-mono tracking-tight">--%</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">SLA Target: &gt;95.0%</div>
+      </div>
+
+      <!-- KPI 4: Critical Alerts -->
+      <div onclick="filterByStatus('critical')" class="cursor-pointer bg-slate-900/90 border border-rose-900/40 hover:border-rose-700 rounded-2xl p-4 shadow-sm relative overflow-hidden group transition-all">
+        <div class="text-xs text-rose-400 font-medium flex items-center justify-between">
+          <span>Critical Bad Alerts</span>
+          <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+        </div>
+        <div id="kpi-critical" class="text-2xl font-bold text-rose-400 mt-1 font-mono tracking-tight">--</div>
+        <div class="text-[11px] text-rose-400/70 mt-0.5">Silent Dropouts / RMA</div>
+      </div>
+
+      <!-- KPI 5: Overdue Maintenance -->
+      <div onclick="filterByMaint('overdue')" class="cursor-pointer col-span-2 md:col-span-1 bg-slate-900/90 border border-amber-900/40 hover:border-amber-700 rounded-2xl p-4 shadow-sm relative overflow-hidden group transition-all">
+        <div class="text-xs text-amber-400 font-medium">Overdue Services</div>
+        <div id="kpi-overdue" class="text-2xl font-bold text-amber-400 mt-1 font-mono tracking-tight">--</div>
+        <div class="text-[11px] text-amber-400/70 mt-0.5">Filter Cycle Past Due</div>
+      </div>
+    </section>
+
+    <!-- ACTIVE ALERTS TRIAGE BANNER (Collapsible) -->
+    <section id="alerts-section" class="bg-slate-900 border border-rose-900/50 rounded-2xl p-5 shadow-lg hidden">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🚨</span>
+          <h2 class="text-sm font-bold text-white">Active Bad Alert Triage Center</h2>
+          <span id="alerts-badge" class="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">0 Alerts</span>
+        </div>
+        <button onclick="toggleAlertsSection()" class="text-xs text-slate-400 hover:text-white">Dismiss</button>
+      </div>
+      <div id="alerts-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
+        <!-- Injected via JS -->
+      </div>
+    </section>
+
+    <!-- CLIENT DIRECTORY & SEARCH BAR -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl shadow-lg overflow-hidden flex flex-col">
+      <!-- Search & Filters Header -->
+      <div class="p-5 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-base font-bold text-white">Clean Air Zone™ Client Fleet Directory</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Real-time connectivity, health evaluation & automated maintenance countdowns</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Search Box -->
+          <div class="relative min-w-[240px]">
+            <input 
+              type="text" 
+              id="search-input" 
+              placeholder="Search client, project, or city..." 
+              oninput="handleSearch(this.value)"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 pl-9 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+            >
+            <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+
+          <!-- Quick Filters -->
+          <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-medium">
+            <button onclick="filterByTab('all')" id="tab-all" class="px-3 py-1 rounded-lg bg-emerald-600 text-white transition-all">All</button>
+            <button onclick="filterByTab('critical')" id="tab-critical" class="px-3 py-1 rounded-lg text-slate-400 hover:text-white transition-all">🚨 Critical Alerts</button>
+            <button onclick="filterByTab('overdue')" id="tab-overdue" class="px-3 py-1 rounded-lg text-slate-400 hover:text-white transition-all">⏳ Due / Overdue</button>
+            <button onclick="filterByTab('healthy')" id="tab-healthy" class="px-3 py-1 rounded-lg text-slate-400 hover:text-white transition-all">🟢 Healthy</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clients Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-950/60 text-slate-400 font-mono uppercase text-[10px] tracking-wider border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">Client / Project Name</th>
+              <th class="py-3 px-4">Segment / City</th>
+              <th class="py-3 px-4">Devices Online</th>
+              <th class="py-3 px-4">Live Uptime SLA</th>
+              <th class="py-3 px-4">Maintenance Cycle</th>
+              <th class="py-3 px-4">Health Status</th>
+              <th class="py-3 px-4 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="clients-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+            <!-- Injected via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer / Pagination -->
+      <div class="p-4 border-t border-slate-800/80 bg-slate-950/40 flex items-center justify-between text-xs text-slate-400">
+        <div id="table-count-label">Showing 0 of 0 clients</div>
+        <div class="flex items-center gap-2">
+          <button id="prev-page-btn" onclick="changePage(-1)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white disabled:opacity-40 disabled:pointer-events-none">Prev</button>
+          <span id="page-num-label" class="font-mono text-slate-300">Page 1</span>
+          <button id="next-page-btn" onclick="changePage(1)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white disabled:opacity-40 disabled:pointer-events-none">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- CLIENT DETAIL SLIDE-OVER DRAWER MODAL -->
+  <div id="detail-drawer" class="fixed inset-0 z-50 overflow-hidden hidden">
+    <!-- Backdrop -->
+    <div onclick="closeDrawer()" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"></div>
+
+    <div class="fixed inset-y-0 right-0 max-w-2xl w-full bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col z-10 transform transition-transform">
+      <!-- Drawer Header -->
+      <div class="p-6 border-b border-slate-800 flex items-start justify-between bg-slate-950/50">
+        <div>
+          <div class="flex items-center gap-2">
+            <span id="drawer-segment-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">B2C</span>
+            <span id="drawer-city-label" class="text-xs text-slate-400 font-mono">Jakarta, Indonesia</span>
+          </div>
+          <h2 id="drawer-client-name" class="text-xl font-bold text-white mt-1">Client Name</h2>
+          <div id="drawer-project-sub" class="text-xs text-slate-400 mt-0.5">Project ID: -- | Contract: --</div>
+        </div>
+        <button onclick="closeDrawer()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <!-- Drawer Scrollable Body -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-6">
+        
+        <!-- Maintenance Alert & Countdown Card -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <span>🛠️</span> Automated Maintenance Cycle (Mini-ERP)
+            </span>
+            <span id="drawer-maint-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">On Track</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800">
+              <div class="text-slate-400">Next Service Target</div>
+              <div id="drawer-maint-date" class="font-mono text-sm font-bold text-white mt-0.5">--</div>
+              <div id="drawer-maint-type" class="text-[10px] text-slate-500 mt-0.5">Filter Cleaning</div>
+            </div>
+            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800">
+              <div class="text-slate-400">Last Service Completed</div>
+              <div id="drawer-last-service" class="font-mono text-sm font-bold text-white mt-0.5">--</div>
+              <div id="drawer-last-tech" class="text-[10px] text-slate-500 mt-0.5">Technician: --</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Room Telemetry & Hardware Cards -->
+        <div>
+          <h3 class="text-sm font-bold text-white mb-3 flex items-center justify-between">
+            <span>Room Telemetry & Device Fleet</span>
+            <span id="drawer-device-count" class="text-xs text-slate-400 font-normal">-- devices</span>
+          </h3>
+          <div id="drawer-rooms-list" class="space-y-4">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <!-- Maintenance History Log -->
+        <div>
+          <h3 class="text-sm font-bold text-white mb-3">Service & Fieldwork History</h3>
+          <div id="drawer-reports-list" class="space-y-2.5">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Drawer Footer -->
+      <div class="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+        <div class="text-xs text-slate-500 font-mono" id="drawer-loc-uuid">UUID: --</div>
+        <button onclick="copyClientSummary()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white">Copy Diagnostic Summary</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
