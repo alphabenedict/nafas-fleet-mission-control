@@ -19,6 +19,7 @@ PG_PORT = int(os.getenv("PG_PORT", 5432))
 PG_USER = os.getenv("PG_USER", "alpha_readonly")
 PG_PASSWORD = os.getenv("PG_PASSWORD", "Ym94rWsLLNcRWRsD")
 PG_DB = os.getenv("PG_DB", "neondb")
+PG_SSLMODE = os.getenv("PG_SSLMODE", "disable")
 
 MONGO_HOST = os.getenv("MONGO_HOST", "20.24.141.186")
 MONGO_PORT = int(os.getenv("MONGO_PORT", 27017))
@@ -47,7 +48,12 @@ def get_pg_connection():
         user=PG_USER,
         password=PG_PASSWORD,
         dbname=PG_DB,
-        connect_timeout=30
+        sslmode=PG_SSLMODE,
+        connect_timeout=30,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5
     )
 
 def get_mongo_client():

@@ -14,14 +14,39 @@ logger = logging.getLogger("fleet.aggregator")
 
 STOPWORDS = {
     'pt', 'tbk', 'cv', 'ltd', 'inc', 'indonesia', 'jakarta', 'the', 'and', 'by', 'jv',
-    'house', 'home', 'office', 'room', 'apartment', 'villa', 'studio', 'main', 'default', 'test', 'location'
+    'house', 'home', 'office', 'room', 'apartment', 'villa', 'studio', 'main', 'default', 'test', 'location',
+    'pak', 'ibu', 'mr', 'mrs', 'dr', 'project'
+}
+
+ENTERPRISE_ALIASES = {
+    "rtv": ["rtv", "metropolitan televisindo", "rtv thamrin"],
+    "mm": ["mighty minds"],
+    "twc": ["twc", "taman wisata candi", "injourney lt.12"],
+    "sis": ["singapore international school", "yayasan pendidikan singapura asia"],
+    "ina": ["ina prosperity tower", "prosperity tower", "indonesia investment authority"],
+    "rowdy": ["rowdybox", "rowdy box"],
+    "danantara": ["wisma danantara", "dana pensiun"],
+    "bsj": ["british school jakarta"]
+}
+
+SINGLE_TOKEN_WHITELIST = {
+    'rtv', 'rohan', 'monga', 'ratna', 'kartadjoemena', 'rowdy', 'rowdybox',
+    'kemenkoinfra', 'injourney', 'soulbox', 'dandelion', 'danantara',
+    'danapensiun', 'bodyform', 'neutradc', 'sana', 'wellington', 'kanmo',
+    'ecocare', 'tripledot', 'pamerindo', 'tiq', 'ishine', 'acv'
 }
 
 def tokenize_name(text: str) -> set:
     if not text:
         return set()
     clean = re.sub(r'[\(\)\[\]\-_,./\\+]', ' ', text.lower())
-    return {w for w in clean.split() if len(w) >= 3 and w not in STOPWORDS}
+    tokens = set()
+    for w in clean.split():
+        if w in STOPWORDS:
+            continue
+        if len(w) >= 3 or w in ['mm', 'si', 'kg', 'ui', 'it']:
+            tokens.add(w)
+    return tokens
 
 def serialize_obj(obj: Any) -> Any:
     if isinstance(obj, (datetime, date)):
@@ -135,6 +160,7 @@ class FleetAggregator:
                 minierp_devices_by_project[pid].append(serialize_obj(dict(d)))
 
             pg_conn.close()
+            logger.info(f"NeonDB fetch completed: {len(raw_projects)} projects, {len(raw_minierp_devices)} planned units.")
 
             # 2. Fetch from MongoDB (Billing, Invoices, Subscriptions)
             client_billing_map = {}
@@ -214,10 +240,11 @@ class FleetAggregator:
                 m_conn = get_mysql_connection()
                 with m_conn.cursor() as cursor:
                     cursor.execute("""
-                        SELECT DISTINCT l.uuid, l.location_name
-                        FROM nafas_mydevice.tb_role_location l
-                        JOIN nafas_mydevice.tb_mydevice d ON d.location_uuid = l.uuid
-                        WHERE l.is_deleted = 0 AND d.is_deleted = 0 AND d.status = 'activated';
+                        SELECT l.uuid, l.location_name, COUNT(d.id) as active_dev_count
+                        FROM nafas_mydevice.tb_mydevice d
+                        JOIN nafas_mydevice.tb_role_location l ON d.location_uuid = l.uuid
+                        WHERE l.is_deleted = 0 AND d.is_deleted = 0 AND d.status = 'activated'
+                        GROUP BY l.uuid, l.location_name;
                     """)
                     all_mysql_locations = cursor.fetchall()
                 m_conn.close()
@@ -234,7 +261,8 @@ class FleetAggregator:
                         valid_locations_index.append({
                             "uuid": loc["uuid"],
                             "name": l_name,
-                            "tokens": t
+                            "tokens": t,
+                            "active_devs": loc.get("active_dev_count") or 0
                         })
 
             # Map candidate reconciled locations for projects
@@ -246,24 +274,48 @@ class FleetAggregator:
                 direct_uuid = p["location_uuid"]
                 p_name = p.get("project_name") or ""
                 c_name = p.get("client_name") or ""
+                full_p = f"{p_name} {c_name}".strip()
 
                 if direct_uuid and len(str(direct_uuid)) > 10:
                     target_uuids_set.add(direct_uuid)
 
                 # Precision token match candidate
-                q_tokens = tokenize_name(p_name).union(tokenize_name(c_name))
-                best_loc = None
-                best_score = 0.0
+                raw_q_tokens = tokenize_name(full_p)
+                expanded_q_tokens = set(raw_q_tokens)
+                for k, aliases in ENTERPRISE_ALIASES.items():
+                    if k in raw_q_tokens or any(a in full_p.lower() for a in aliases):
+                        expanded_q_tokens.add(k)
+                        for a in aliases:
+                            expanded_q_tokens.update(tokenize_name(a))
 
-                if q_tokens:
+                best_loc = None
+                best_tuple = (-1, -1.0, -1)  # (exact_raw_overlap_count, score, active_dev_count)
+
+                if expanded_q_tokens:
                     for loc in valid_locations_index:
-                        overlap = q_tokens.intersection(loc["tokens"])
-                        if not overlap:
+                        loc_tokens = loc["tokens"]
+                        raw_overlap = raw_q_tokens.intersection(loc_tokens)
+                        exp_overlap = expanded_q_tokens.intersection(loc_tokens)
+
+                        if not raw_overlap and not exp_overlap:
                             continue
-                        score = len(overlap) / len(q_tokens)
-                        if (len(overlap) >= 2 or (len(overlap) == 1 and list(overlap)[0] in ['kemenkoinfra', 'injourney', 'soulbox', 'dandelion', 'botanica', 'danantara', 'danapensiun', 'bodyform', 'neutradc'])) and score >= 0.5:
-                            if score > best_score:
-                                best_score = score
+
+                        exact_count = len(raw_overlap)
+                        exp_count = len(exp_overlap)
+                        score = exp_count / len(expanded_q_tokens) if expanded_q_tokens else 0.0
+
+                        is_valid = False
+                        if exact_count >= 2:
+                            is_valid = True
+                        elif exp_count >= 2 and score >= 0.3:
+                            is_valid = True
+                        elif exp_count == 1 and (list(exp_overlap)[0] in SINGLE_TOKEN_WHITELIST or any(t in SINGLE_TOKEN_WHITELIST for t in exp_overlap)):
+                            is_valid = True
+
+                        if is_valid:
+                            match_tuple = (exact_count, score, loc["active_devs"])
+                            if match_tuple > best_tuple:
+                                best_tuple = match_tuple
                                 best_loc = loc
 
                 if best_loc:
@@ -272,53 +324,40 @@ class FleetAggregator:
 
             loc_uuids = list(target_uuids_set)
 
-            # Fetch from MySQL in resilient chunks of 25 location_uuids
+            # Fetch from MySQL rooms and devices for targeted locations
             raw_devices = []
             rooms_by_uuid = {}
             if loc_uuids:
-                chunk_size = 25
-                chunks = [loc_uuids[i:i + chunk_size] for i in range(0, len(loc_uuids), chunk_size)]
-                
-                for chunk in chunks:
-                    # Rooms chunk
-                    for attempt in range(3):
-                        try:
-                            m_conn = get_mysql_connection()
-                            with m_conn.cursor() as cursor:
-                                cursor.execute("""
-                                    SELECT uuid, location_uuid, room_name
-                                    FROM nafas_mydevice.tb_role_room
-                                    WHERE location_uuid IN %s;
-                                """, (tuple(chunk),))
-                                for rm in cursor.fetchall():
-                                    rooms_by_uuid[rm["uuid"]] = rm["room_name"]
-                            m_conn.close()
-                            break
-                        except Exception as e:
-                            logger.warning(f"MySQL rooms chunk query attempt {attempt+1} failed: {e}")
-                            time.sleep(1)
+                try:
+                    m_conn = get_mysql_connection()
+                    with m_conn.cursor() as cursor:
+                        # Chunk in batches of 50 to avoid overly long SQL statements
+                        chunk_size = 50
+                        chunks = [loc_uuids[i:i + chunk_size] for i in range(0, len(loc_uuids), chunk_size)]
+                        for chunk in chunks:
+                            cursor.execute("""
+                                SELECT uuid, location_uuid, room_name
+                                FROM nafas_mydevice.tb_role_room
+                                WHERE location_uuid IN %s;
+                            """, (tuple(chunk),))
+                            for rm in cursor.fetchall():
+                                rooms_by_uuid[rm["uuid"]] = rm["room_name"]
 
-                    # Devices chunk (including firmware, kWh, speed, mode)
-                    for attempt in range(3):
-                        try:
-                            m_conn = get_mysql_connection()
-                            with m_conn.cursor() as cursor:
-                                cursor.execute("""
-                                    SELECT id, uuid, vendor_device_id, device_name, device_type,
-                                           category_code, status, connectivity, location_uuid,
-                                           room_uuid, device_firmware, device_series, total_powerconsumption,
-                                           speed, mode, activation_date,
-                                           device_state, measurement_current, updated_at
-                                    FROM nafas_mydevice.tb_mydevice
-                                    WHERE is_deleted = 0 AND status = 'activated' AND location_uuid IN %s;
-                                """, (tuple(chunk),))
-                                devs = cursor.fetchall()
-                                raw_devices.extend(devs)
-                            m_conn.close()
-                            break
-                        except Exception as e:
-                            logger.warning(f"MySQL devices chunk query attempt {attempt+1} failed: {e}")
-                            time.sleep(1)
+                            cursor.execute("""
+                                SELECT id, uuid, vendor_device_id, device_name, device_type,
+                                       category_code, status, connectivity, location_uuid,
+                                       room_uuid, device_firmware, device_series, total_powerconsumption,
+                                       speed, mode, activation_date,
+                                       device_state, measurement_current, updated_at
+                                FROM nafas_mydevice.tb_mydevice
+                                WHERE is_deleted = 0 AND status = 'activated' AND location_uuid IN %s;
+                            """, (tuple(chunk),))
+                            devs = cursor.fetchall()
+                            raw_devices.extend(devs)
+                    m_conn.close()
+                    logger.info(f"MySQL devices fetch completed: {len(raw_devices)} active IoT devices loaded across {len(loc_uuids)} target locations.")
+                except Exception as e:
+                    logger.error(f"Error fetching MySQL rooms and devices: {e}", exc_info=True)
 
             # Index MySQL devices by location_uuid
             devices_by_loc = {}
