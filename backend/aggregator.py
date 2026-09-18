@@ -1,3 +1,4 @@
+import re
 import json
 import time
 import logging
@@ -10,6 +11,17 @@ from backend.database import get_mysql_connection, get_pg_connection, get_mongo_
 from backend.alert_engine import AlertEngine
 
 logger = logging.getLogger("fleet.aggregator")
+
+STOPWORDS = {
+    'pt', 'tbk', 'cv', 'ltd', 'inc', 'indonesia', 'jakarta', 'the', 'and', 'by', 'jv',
+    'house', 'home', 'office', 'room', 'apartment', 'villa', 'studio', 'main', 'default', 'test', 'location'
+}
+
+def tokenize_name(text: str) -> set:
+    if not text:
+        return set()
+    clean = re.sub(r'[\(\)\[\]\-_,./\\+]', ' ', text.lower())
+    return {w for w in clean.split() if len(w) >= 3 and w not in STOPWORDS}
 
 def serialize_obj(obj: Any) -> Any:
     if isinstance(obj, (datetime, date)):
@@ -196,8 +208,69 @@ class FleetAggregator:
             except Exception as mongo_err:
                 logger.warning(f"MongoDB Billing sync skipped/fallback: {mongo_err}")
 
-            # 3. Extract active location_uuids for targeted MySQL query
-            loc_uuids = [p["location_uuid"] for p in raw_projects if p["location_uuid"] and len(str(p["location_uuid"])) > 10]
+            # 3. Fetch active locations from MySQL for intelligent auto-reconciliation
+            all_mysql_locations = []
+            try:
+                m_conn = get_mysql_connection()
+                with m_conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT DISTINCT l.uuid, l.location_name
+                        FROM nafas_mydevice.tb_role_location l
+                        JOIN nafas_mydevice.tb_mydevice d ON d.location_uuid = l.uuid
+                        WHERE l.is_deleted = 0 AND d.is_deleted = 0 AND d.status = 'activated';
+                    """)
+                    all_mysql_locations = cursor.fetchall()
+                m_conn.close()
+            except Exception as e:
+                logger.warning(f"Could not fetch MySQL locations for reconciliation: {e}")
+
+            # Build location token index for precision matching
+            valid_locations_index = []
+            for loc in all_mysql_locations:
+                l_name = (loc.get("location_name") or "").strip()
+                if l_name and l_name.lower() not in STOPWORDS:
+                    t = tokenize_name(l_name)
+                    if t:
+                        valid_locations_index.append({
+                            "uuid": loc["uuid"],
+                            "name": l_name,
+                            "tokens": t
+                        })
+
+            # Map candidate reconciled locations for projects
+            project_location_mapping = {}
+            target_uuids_set = set()
+
+            for p in raw_projects:
+                pid = p["id"]
+                direct_uuid = p["location_uuid"]
+                p_name = p.get("project_name") or ""
+                c_name = p.get("client_name") or ""
+
+                if direct_uuid and len(str(direct_uuid)) > 10:
+                    target_uuids_set.add(direct_uuid)
+
+                # Precision token match candidate
+                q_tokens = tokenize_name(p_name).union(tokenize_name(c_name))
+                best_loc = None
+                best_score = 0.0
+
+                if q_tokens:
+                    for loc in valid_locations_index:
+                        overlap = q_tokens.intersection(loc["tokens"])
+                        if not overlap:
+                            continue
+                        score = len(overlap) / len(q_tokens)
+                        if (len(overlap) >= 2 or (len(overlap) == 1 and list(overlap)[0] in ['kemenkoinfra', 'injourney', 'soulbox', 'dandelion', 'botanica', 'danantara', 'danapensiun', 'bodyform', 'neutradc'])) and score >= 0.5:
+                            if score > best_score:
+                                best_score = score
+                                best_loc = loc
+
+                if best_loc:
+                    project_location_mapping[pid] = best_loc
+                    target_uuids_set.add(best_loc["uuid"])
+
+            loc_uuids = list(target_uuids_set)
 
             # Fetch from MySQL in resilient chunks of 25 location_uuids
             raw_devices = []
@@ -302,7 +375,22 @@ class FleetAggregator:
                 loc_uuid = p["location_uuid"]
                 start_date = p["start_date"]
 
+                # Auto-healing location resolution
                 loc_devs = devices_by_loc.get(loc_uuid, [])
+                is_reconciled = False
+                matched_loc_name = None
+                active_loc_uuid = loc_uuid
+
+                if len(loc_devs) == 0 and pid in project_location_mapping:
+                    reconciled_loc = project_location_mapping[pid]
+                    rec_uuid = reconciled_loc["uuid"]
+                    rec_devs = devices_by_loc.get(rec_uuid, [])
+                    if len(rec_devs) > 0:
+                        loc_devs = rec_devs
+                        is_reconciled = True
+                        matched_loc_name = reconciled_loc["name"]
+                        active_loc_uuid = rec_uuid
+
                 minierp_devs = minierp_devices_by_project.get(pid, [])
                 
                 # Match MongoDB billing info for this client
@@ -419,7 +507,7 @@ class FleetAggregator:
                     "id": pid,
                     "project_name": p_name,
                     "client_name": c_name,
-                    "location_uuid": loc_uuid
+                    "location_uuid": active_loc_uuid
                 }
                 project_alerts = AlertEngine.evaluate_device_alerts(
                     project_dict, room_map, billing_info=client_billing, minierp_devices=minierp_devs
@@ -446,7 +534,10 @@ class FleetAggregator:
                     "country": p["country"] or "Indonesia",
                     "contract_type": p["contract_type"],
                     "start_date": str(start_date) if start_date else None,
-                    "location_uuid": loc_uuid,
+                    "location_uuid": active_loc_uuid,
+                    "original_location_uuid": loc_uuid,
+                    "is_location_reconciled": is_reconciled,
+                    "reconciled_location_name": matched_loc_name,
                     "device_count": dev_count,
                     "online_count": online_count,
                     "offline_count": offline_count,

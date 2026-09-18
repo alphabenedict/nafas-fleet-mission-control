@@ -286,8 +286,12 @@ function renderClientsTable() {
     return `
       <tr class="hover:bg-slate-800/40 transition-colors group">
         <td class="py-3 px-4">
-          <div class="font-bold text-white group-hover:text-emerald-400 transition-colors">${escapeHtml(c.client_name)}</div>
+          <div class="font-bold text-white group-hover:text-emerald-400 transition-colors flex items-center gap-1.5 flex-wrap">
+            <span>${escapeHtml(c.client_name)}</span>
+            ${c.is_location_reconciled ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-950/80 text-cyan-400 border border-cyan-700/60" title="Auto-reconciled from MySQL location: ${escapeHtml(c.reconciled_location_name)}">🔄 Auto-Linked</span>` : ''}
+          </div>
           <div class="text-[11px] text-slate-400">${escapeHtml(c.project_name)}</div>
+          ${c.is_location_reconciled ? `<div class="text-[10px] text-cyan-400 font-mono mt-0.5 flex items-center gap-1"><span>📍</span> ${escapeHtml(c.reconciled_location_name)}</div>` : ''}
         </td>
         <td class="py-3 px-4">
           <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">${escapeHtml(c.segment || 'B2C')}</span>
@@ -364,7 +368,15 @@ function renderDrawerContent(data) {
   document.getElementById('drawer-segment-badge').innerText = c.segment || 'B2C';
   document.getElementById('drawer-city-label').innerText = `${c.city || 'Jakarta'}, ${c.country || 'Indonesia'}`;
   document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (${c.uptime_pct}% SLA)`;
-  document.getElementById('drawer-loc-uuid').innerText = `Location UUID: ${c.location_uuid || 'N/A'}`;
+  
+  if (c.is_location_reconciled) {
+    document.getElementById('drawer-loc-uuid').innerHTML = `
+      <span class="text-slate-400">Location:</span> <span class="text-cyan-300 font-semibold font-mono">📍 ${escapeHtml(c.reconciled_location_name)}</span> 
+      <span class="text-[10px] text-cyan-400 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60 ml-1">⚡ Auto-Linked (${escapeHtml(c.location_uuid)})</span>
+    `;
+  } else {
+    document.getElementById('drawer-loc-uuid').innerText = `Location UUID: ${c.location_uuid || 'N/A'}`;
+  }
 
   // MongoDB Billing Card
   const bBadge = document.getElementById('drawer-billing-badge');
