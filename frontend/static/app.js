@@ -156,18 +156,42 @@ async function fetchFleetData() {
     renderAlerts();
     renderClientsTable();
     updateSyncTime();
+
+    // Reset online VPN / API indicator
+    const vpnEl = document.getElementById('vpn-status');
+    const vpnDot = document.getElementById('vpn-dot');
+    if (vpnEl) {
+      vpnEl.innerText = 'VPN: Azure Alpha';
+      vpnEl.className = 'text-slate-300 font-medium';
+    }
+    if (vpnDot) {
+      vpnDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+    }
   } catch (err) {
     console.error('Failed to load fleet data:', err);
-    document.getElementById('vpn-status').innerText = 'VPN / API Offline';
-    document.getElementById('vpn-status').className = 'text-rose-400 font-bold';
+    const vpnEl = document.getElementById('vpn-status');
+    const vpnDot = document.getElementById('vpn-dot');
+    if (vpnEl) {
+      vpnEl.innerText = 'VPN / API Offline';
+      vpnEl.className = 'text-rose-400 font-bold';
+    }
+    if (vpnDot) {
+      vpnDot.className = 'w-2 h-2 rounded-full bg-rose-500';
+    }
+    const syncLabel = document.getElementById('last-sync-time');
+    if (syncLabel) {
+      syncLabel.innerText = 'Sync Error';
+    }
   }
 }
 
 async function triggerManualRefresh() {
   const btn = document.getElementById('refresh-btn');
   const icon = document.getElementById('refresh-icon');
-  btn.disabled = true;
-  icon.classList.add('animate-spin');
+  const syncLabel = document.getElementById('last-sync-time');
+  if (btn) btn.disabled = true;
+  if (icon) icon.classList.add('animate-spin');
+  if (syncLabel) syncLabel.innerText = 'Syncing...';
 
   try {
     const res = await fetch('/api/fleet/refresh', { method: 'POST' }).then(r => r.json());
@@ -176,9 +200,10 @@ async function triggerManualRefresh() {
     }
   } catch (err) {
     console.error('Refresh failed:', err);
+    if (syncLabel) syncLabel.innerText = 'Sync Failed';
   } finally {
-    btn.disabled = false;
-    icon.classList.remove('animate-spin');
+    if (btn) btn.disabled = false;
+    if (icon) icon.classList.remove('animate-spin');
   }
 }
 
@@ -236,17 +261,18 @@ function renderKPIs() {
 function renderAlerts() {
   const alertsSec = document.getElementById('alerts-section');
   const alertsList = document.getElementById('alerts-list');
-  const badge = document.getElementById('alerts-badge');
+  const badge = document.getElementById('alerts-badge') || document.getElementById('alerts-badge-count');
 
-  const alerts = fleetData.alerts;
+  const alerts = fleetData.alerts || [];
   if (!alerts || alerts.length === 0) {
-    alertsSec.classList.add('hidden');
+    if (alertsSec) alertsSec.classList.add('hidden');
     return;
   }
 
-  alertsSec.classList.remove('hidden');
-  badge.innerText = `${alerts.length} Active Alerts`;
+  if (alertsSec) alertsSec.classList.remove('hidden');
+  if (badge) badge.innerText = `${alerts.length} Active Alerts`;
 
+  if (!alertsList) return;
   alertsList.innerHTML = alerts.slice(0, 10).map(a => {
     const isCrit = a.severity === 'CRITICAL';
     const isWarn = a.severity === 'WARNING';

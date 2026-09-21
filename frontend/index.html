@@ -66,7 +66,7 @@
     <!-- Right Controls -->
     <div class="flex items-center gap-3">
       <div class="hidden md:flex items-center gap-2 text-xs font-mono bg-slate-950/60 border border-slate-800 px-3 py-1.5 rounded-lg text-slate-400">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="vpn-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span id="vpn-status">VPN: Azure Alpha</span>
         <span class="text-slate-600">|</span>
         <span id="last-sync-time">Syncing...</span>
@@ -144,11 +144,11 @@
         <div class="flex items-center gap-2">
           <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
           <h2 class="text-sm font-bold text-rose-400 tracking-wide uppercase font-mono">Triage Required: Active Fleet Alerts</h2>
-          <span id="alerts-badge-count" class="bg-rose-950 text-rose-300 text-xs px-2 py-0.5 rounded-full font-bold border border-rose-800">--</span>
+          <span id="alerts-badge" class="bg-rose-950 text-rose-300 text-xs px-2 py-0.5 rounded-full font-bold border border-rose-800">--</span>
         </div>
-        <button onclick="toggleAlertsList()" class="text-xs text-slate-400 hover:text-white transition-colors" id="alerts-toggle-btn">View All ↓</button>
+        <button onclick="toggleAlertsSection()" class="text-xs text-slate-400 hover:text-white transition-colors" id="alerts-toggle-btn">Dismiss ✕</button>
       </div>
-      <div id="alerts-list" class="space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+      <div id="alerts-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1"></div>
     </section>
 
     <!-- CLIENT DIRECTORY & SEARCH BAR -->
@@ -408,6 +408,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=1.5.0"></script>
+  <script src="/static/app.js?v=1.5.2"></script>
 </body>
 </html>
