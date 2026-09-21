@@ -60,7 +60,7 @@ def serialize_obj(obj: Any) -> Any:
     return obj
 
 class FleetAggregator:
-    def __init__(self, cache_ttl: int = 300):
+    def __init__(self, cache_ttl: int = 900):
         self.cache_ttl = cache_ttl
         self.last_updated: Optional[datetime] = None
         self.cached_summary: Dict[str, Any] = {}
@@ -68,20 +68,37 @@ class FleetAggregator:
         self.cached_alerts: List[Dict[str, Any]] = []
         self.cached_client_details: Dict[int, Dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self._is_refreshing = False
 
     def is_cache_valid(self) -> bool:
         if not self.last_updated:
             return False
         return (datetime.now(timezone.utc) - self.last_updated).total_seconds() < self.cache_ttl
 
-    def refresh(self, force: bool = False) -> None:
+    def refresh(self, force: bool = False, background: bool = False) -> None:
         if not force and self.is_cache_valid():
             return
 
-        with self._lock:
-            if not force and self.is_cache_valid():
-                return
+        # If data is already in cache, serve stale cache and refresh in background
+        if self.cached_clients and (background or not force):
+            if not self._is_refreshing:
+                threading.Thread(target=self._run_locked_refresh, daemon=True).start()
+            return
+
+        self._run_locked_refresh()
+
+    def _run_locked_refresh(self) -> None:
+        if self._is_refreshing:
+            return
+        acquired = self._lock.acquire(blocking=False)
+        if not acquired:
+            return
+        try:
+            self._is_refreshing = True
             self._do_refresh()
+        finally:
+            self._is_refreshing = False
+            self._lock.release()
 
     def _do_refresh(self) -> None:
         logger.info("Refreshing Triple-Database Fleet Intelligence Cache (MySQL + NeonDB + MongoDB)...")
@@ -99,7 +116,9 @@ class FleetAggregator:
                        c.id as client_id, c.client_name, c.client_type, c.segment
                 FROM projects p
                 LEFT JOIN clients c ON c.id = p.client_id
-                WHERE p.status = 'active' OR p.category ILIKE '%Clean Air%'
+                WHERE p.status IN ('active', 'lost')
+                  AND p.project_name NOT ILIKE '%dummy%'
+                  AND COALESCE(c.client_name, '') NOT ILIKE '%dummy%'
                 ORDER BY p.id;
             """)
             raw_projects = pg_cur.fetchall()
@@ -147,7 +166,8 @@ class FleetAggregator:
             pg_cur.execute("""
                 SELECT d.id, d.room_id, r.project_id, 
                        COALESCE(r.room_name, 'Room') as room_name,
-                       d.device_id, d.device_item_type, d.device_type, d.device_status
+                       d.device_id, d.device_item_type, d.device_type, d.device_status,
+                       d.installed_date, d.takeout_date, d.notes
                 FROM devices d
                 JOIN rooms r ON r.id = d.room_id;
             """)
@@ -253,8 +273,10 @@ class FleetAggregator:
 
             # Build location token index for precision matching
             valid_locations_index = []
+            loc_name_lookup = {}
             for loc in all_mysql_locations:
                 l_name = (loc.get("location_name") or "").strip()
+                loc_name_lookup[loc["uuid"]] = l_name
                 if l_name and l_name.lower() not in STOPWORDS:
                     t = tokenize_name(l_name)
                     if t:
@@ -264,6 +286,54 @@ class FleetAggregator:
                             "tokens": t,
                             "active_devs": loc.get("active_dev_count") or 0
                         })
+
+            # 3.0 Mini-ERP Benchmark Resolution:
+            # Map registered hardware serials from Mini-ERP to their true MySQL location_uuid
+            erp_benchmark_devices = {}
+            all_benchmark_names = []
+            erp_device_room_map = {}
+            for d in raw_minierp_devices:
+                pid = d["project_id"]
+                d_id = (d.get("device_id") or "").strip()
+                r_name = (d.get("room_name") or "").strip()
+                if d_id:
+                    clean_did = d_id.lower()
+                    if r_name:
+                        erp_device_room_map[clean_did] = r_name
+                    if pid not in erp_benchmark_devices:
+                        erp_benchmark_devices[pid] = []
+                    if len(erp_benchmark_devices[pid]) < 5:
+                        erp_benchmark_devices[pid].append(d_id)
+                        all_benchmark_names.append(d_id)
+
+            dev_to_mysql_loc = {}
+            unique_b_names = list(set(all_benchmark_names))
+            if unique_b_names:
+                try:
+                    m_conn = get_mysql_connection()
+                    with m_conn.cursor() as cursor:
+                        for i in range(0, len(unique_b_names), 500):
+                            chunk = unique_b_names[i:i+500]
+                            cursor.execute("""
+                                SELECT device_name, location_uuid
+                                FROM nafas_mydevice.tb_mydevice
+                                WHERE is_deleted = 0 AND device_name IN %s;
+                            """, (tuple(chunk),))
+                            for r in cursor.fetchall():
+                                if r.get("location_uuid"):
+                                    dev_to_mysql_loc[r["device_name"].lower()] = r["location_uuid"]
+                    m_conn.close()
+                    logger.info(f"Mini-ERP Benchmark: resolved {len(dev_to_mysql_loc)} device serials to live MySQL locations.")
+                except Exception as e:
+                    logger.warning(f"Error resolving benchmark devices to MySQL locations: {e}")
+
+            project_erp_hardware_loc = {}
+            for pid, d_list in erp_benchmark_devices.items():
+                for d_name in d_list:
+                    loc = dev_to_mysql_loc.get(d_name.lower())
+                    if loc:
+                        project_erp_hardware_loc[pid] = loc
+                        break
 
             # Map candidate reconciled locations for projects
             project_location_mapping = {}
@@ -276,10 +346,22 @@ class FleetAggregator:
                 c_name = p.get("client_name") or ""
                 full_p = f"{p_name} {c_name}".strip()
 
-                if direct_uuid and len(str(direct_uuid)) > 10:
+                # Priority 1: Mini-ERP Hardware Serial Ground Truth
+                erp_hw_loc = project_erp_hardware_loc.get(pid)
+                if erp_hw_loc:
+                    target_uuids_set.add(erp_hw_loc)
+                    l_title = loc_name_lookup.get(erp_hw_loc) or f"Location {erp_hw_loc[:8]}..."
+                    project_location_mapping[pid] = {
+                        "uuid": erp_hw_loc,
+                        "name": l_title,
+                        "method": "hardware_serial"
+                    }
+                    continue
+
+                if direct_uuid and len(str(direct_uuid)) > 10 and not str(direct_uuid).startswith("proj-"):
                     target_uuids_set.add(direct_uuid)
 
-                # Precision token match candidate
+                # Priority 2: Precision token match candidate
                 raw_q_tokens = tokenize_name(full_p)
                 expanded_q_tokens = set(raw_q_tokens)
                 for k, aliases in ENTERPRISE_ALIASES.items():
@@ -368,7 +450,9 @@ class FleetAggregator:
                         devices_by_loc[loc] = []
                     
                     dev_dict = dict(dev)
-                    dev_dict["room_name"] = rooms_by_uuid.get(dev["room_uuid"]) or "Main Room"
+                    d_name_clean = (dev.get("device_name") or "").lower()
+                    erp_rm = erp_device_room_map.get(d_name_clean)
+                    dev_dict["room_name"] = rooms_by_uuid.get(dev["room_uuid"]) or erp_rm or "Main Room"
                     
                     # Convert power consumption
                     dev_dict["total_powerconsumption"] = float(dev_dict.get("total_powerconsumption") or 0.0)
@@ -411,24 +495,43 @@ class FleetAggregator:
                 pid = p["id"]
                 p_name = p["project_name"] or f"Project #{pid}"
                 c_name = p["client_name"] or p_name
+                if "dummy" in p_name.lower() or "dummy" in c_name.lower():
+                    continue
+                p_status = (p["status"] or "active").strip().lower()
+                is_lost_client = (p_status == "lost")
+                is_active_client = not is_lost_client
                 loc_uuid = p["location_uuid"]
                 start_date = p["start_date"]
 
                 # Auto-healing location resolution
-                loc_devs = devices_by_loc.get(loc_uuid, [])
+                loc_devs = []
                 is_reconciled = False
                 matched_loc_name = None
                 active_loc_uuid = loc_uuid
 
-                if len(loc_devs) == 0 and pid in project_location_mapping:
+                # Priority 1: Mini-ERP Hardware serial benchmark match
+                if pid in project_location_mapping and project_location_mapping[pid].get("method") == "hardware_serial":
                     reconciled_loc = project_location_mapping[pid]
                     rec_uuid = reconciled_loc["uuid"]
                     rec_devs = devices_by_loc.get(rec_uuid, [])
                     if len(rec_devs) > 0:
                         loc_devs = rec_devs
-                        is_reconciled = True
+                        is_reconciled = (rec_uuid != loc_uuid)
                         matched_loc_name = reconciled_loc["name"]
                         active_loc_uuid = rec_uuid
+
+                # Priority 2: Direct location_uuid or token-reconciled location
+                if not loc_devs:
+                    loc_devs = devices_by_loc.get(loc_uuid, [])
+                    if len(loc_devs) == 0 and pid in project_location_mapping:
+                        reconciled_loc = project_location_mapping[pid]
+                        rec_uuid = reconciled_loc["uuid"]
+                        rec_devs = devices_by_loc.get(rec_uuid, [])
+                        if len(rec_devs) > 0:
+                            loc_devs = rec_devs
+                            is_reconciled = True
+                            matched_loc_name = reconciled_loc["name"]
+                            active_loc_uuid = rec_uuid
 
                 minierp_devs = minierp_devices_by_project.get(pid, [])
                 
@@ -457,12 +560,13 @@ class FleetAggregator:
                     }
 
                 b_status = client_billing["billing_status"]
-                if b_status == "PAID":
-                    paid_clients_count += 1
-                elif b_status == "OVERDUE_UNPAID":
-                    unpaid_clients_count += 1
-                elif b_status == "PAYMENT_PENDING":
-                    pending_clients_count += 1
+                if is_active_client:
+                    if b_status == "PAID":
+                        paid_clients_count += 1
+                    elif b_status == "OVERDUE_UNPAID":
+                        unpaid_clients_count += 1
+                    elif b_status == "PAYMENT_PENDING":
+                        pending_clients_count += 1
 
                 # Group devices by room
                 room_map = {}
@@ -477,7 +581,8 @@ class FleetAggregator:
                     if d.get("is_firmware_outdated"):
                         outdated_fw_count += 1
 
-                total_fleet_kwh += project_kwh
+                if is_active_client:
+                    total_fleet_kwh += project_kwh
 
                 # Calculate device stats
                 dev_count = len(loc_devs)
@@ -485,8 +590,9 @@ class FleetAggregator:
                 offline_count = dev_count - online_count
                 uptime_pct = round((online_count / dev_count * 100.0), 1) if dev_count > 0 else 0.0
 
-                total_active_devices += dev_count
-                total_online_devices += online_count
+                if is_active_client:
+                    total_active_devices += dev_count
+                    total_online_devices += online_count
 
                 # Calculate Maintenance Milestone / Cycle
                 p_milestones = milestones_by_project.get(pid, [])
@@ -535,7 +641,8 @@ class FleetAggregator:
                     days_remaining = (next_maint_date - today).days
                     if days_remaining < 0:
                         maint_status = "OVERDUE"
-                        overdue_services_count += 1
+                        if is_active_client:
+                            overdue_services_count += 1
                     elif days_remaining <= 14:
                         maint_status = "DUE_SOON"
                     else:
@@ -551,28 +658,107 @@ class FleetAggregator:
                 project_alerts = AlertEngine.evaluate_device_alerts(
                     project_dict, room_map, billing_info=client_billing, minierp_devices=minierp_devs
                 )
-                all_alerts.extend(project_alerts)
-
-                for a in project_alerts:
-                    if a.get("severity") == "CRITICAL":
-                        critical_alerts_count += 1
+                if is_active_client:
+                    all_alerts.extend(project_alerts)
+                    for a in project_alerts:
+                        if a.get("severity") == "CRITICAL":
+                            critical_alerts_count += 1
 
                 # Summarize Mini-ERP device models
+                # Mini-ERP Models & Status Breakdown
                 minierp_models = {}
                 for md in minierp_devs:
                     m_label = md.get("device_item_type") or md.get("device_type") or "Unit"
                     minierp_models[m_label] = minierp_models.get(m_label, 0) + 1
 
+                # Build lookup of live MySQL devices for cross-referencing
+                mysql_dev_lookup = {
+                    (d.get("device_name") or "").strip().lower(): d 
+                    for d in loc_devs
+                }
+
+                # Annotate Mini-ERP devices with Installed / Takeout status and live telemetry
+                annotated_minierp_devs = []
+                erp_installed_count = 0
+                erp_takeout_count = 0
+                erp_spare_count = 0
+
+                for ed in minierp_devs:
+                    ed_dict = dict(ed)
+                    if ed_dict.get("installed_date"):
+                        ed_dict["installed_date"] = str(ed_dict["installed_date"])
+                    if ed_dict.get("takeout_date"):
+                        ed_dict["takeout_date"] = str(ed_dict["takeout_date"])
+
+                    ed_status = (ed_dict.get("device_status") or "Installed").strip()
+                    ed_status_lower = ed_status.lower()
+                    if "takeout" in ed_status_lower:
+                        erp_takeout_count += 1
+                        ed_dict["normalized_status"] = "Takeout"
+                    elif "spare" in ed_status_lower:
+                        erp_spare_count += 1
+                        ed_dict["normalized_status"] = "Spare"
+                    else:
+                        erp_installed_count += 1
+                        ed_dict["normalized_status"] = "Installed"
+
+                    ed_name = (ed_dict.get("device_id") or "").strip()
+                    m_match = mysql_dev_lookup.get(ed_name.lower()) if ed_name else None
+                    if m_match:
+                        ed_dict["in_telemetry"] = True
+                        ed_dict["connectivity"] = m_match.get("connectivity") or "offline"
+                        ed_dict["mysql_status"] = m_match.get("status")
+                        ed_dict["telemetry_data"] = {
+                            "power_kwh": m_match.get("total_powerconsumption"),
+                            "firmware": m_match.get("device_firmware"),
+                            "is_outdated_fw": m_match.get("is_firmware_outdated"),
+                            "measurements": m_match.get("measurement_current")
+                        }
+                    else:
+                        ed_dict["in_telemetry"] = False
+                        ed_dict["connectivity"] = "unlinked"
+                        ed_dict["mysql_status"] = None
+                        ed_dict["telemetry_data"] = None
+
+                    annotated_minierp_devs.append(ed_dict)
+
+                # Cross-reference live MySQL devices with ERP status
+                erp_dev_lookup = {
+                    (ed.get("device_id") or "").strip().lower(): ed
+                    for ed in annotated_minierp_devs if ed.get("device_id")
+                }
+                for d in loc_devs:
+                    d_clean = (d.get("device_name") or "").strip().lower()
+                    matched_erp = erp_dev_lookup.get(d_clean)
+                    if matched_erp:
+                        d["erp_status"] = matched_erp.get("normalized_status")
+                        d["erp_installed_date"] = str(matched_erp.get("installed_date")) if matched_erp.get("installed_date") else None
+                        d["erp_takeout_date"] = str(matched_erp.get("takeout_date")) if matched_erp.get("takeout_date") else None
+                        d["erp_notes"] = matched_erp.get("notes")
+                    else:
+                        d["erp_status"] = "Unregistered"
+
+                raw_country = (p["country"] or "Indonesia").strip()
+                raw_city = (p["city"] or "").strip()
+                if raw_country.lower() == "cilegon":
+                    norm_country = "Indonesia"
+                    norm_city = raw_city if raw_city else "Cilegon"
+                else:
+                    norm_country = raw_country
+                    norm_city = raw_city or "Jakarta"
+
                 client_card = {
                     "project_id": pid,
                     "project_name": p_name,
                     "client_name": c_name,
+                    "project_status": "lost" if is_lost_client else "active",
                     "client_type": p["client_type"] or "Residential",
                     "segment": p["segment"] or "B2C",
-                    "city": p["city"] or "Jakarta",
-                    "country": p["country"] or "Indonesia",
+                    "city": norm_city,
+                    "country": norm_country,
                     "contract_type": p["contract_type"],
                     "start_date": str(start_date) if start_date else None,
+                    "end_date": str(p["end_date"]) if p.get("end_date") else None,
                     "location_uuid": active_loc_uuid,
                     "original_location_uuid": loc_uuid,
                     "is_location_reconciled": is_reconciled,
@@ -586,6 +772,9 @@ class FleetAggregator:
                     "billing_status": b_status,
                     "billing_summary": client_billing,
                     "minierp_planned_count": len(minierp_devs),
+                    "minierp_installed_count": erp_installed_count,
+                    "minierp_takeout_count": erp_takeout_count,
+                    "minierp_spare_count": erp_spare_count,
                     "minierp_models": minierp_models,
                     "maint_target_date": str(next_maint_date) if next_maint_date else None,
                     "maint_type": next_maint_type,
@@ -604,16 +793,22 @@ class FleetAggregator:
                     "rooms": room_map,
                     "milestones": p_milestones,
                     "fieldwork_reports": p_reports,
-                    "minierp_devices": minierp_devs,
+                    "minierp_devices": annotated_minierp_devs,
                     "billing": client_billing,
                     "alerts": project_alerts
                 }
+
+            active_clients = [c for c in processed_clients if c.get("project_status") == "active"]
+            lost_clients = [c for c in processed_clients if c.get("project_status") == "lost"]
 
             # Global Fleet SLA & KPIs
             global_online_pct = round((total_online_devices / total_active_devices * 100.0), 1) if total_active_devices > 0 else 0.0
 
             self.cached_summary = {
-                "total_clients": len(processed_clients),
+                "total_clients": len(active_clients),
+                "active_clients_count": len(active_clients),
+                "lost_clients_count": len(lost_clients),
+                "total_records_count": len(processed_clients),
                 "total_active_devices": total_active_devices,
                 "total_online_devices": total_online_devices,
                 "total_offline_devices": total_active_devices - total_online_devices,

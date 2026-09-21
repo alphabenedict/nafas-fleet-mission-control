@@ -29,6 +29,40 @@
       </div>
     </div>
 
+    <!-- Center Omnisearch Bar with Quick Preview -->
+    <div id="global-search-container" class="relative flex-1 max-w-md mx-4 hidden lg:block">
+      <div class="relative">
+        <input 
+          type="text" 
+          id="global-search-input" 
+          placeholder="🔍 Search client by name (e.g. iShine, Botanica)..." 
+          oninput="handleGlobalSearch(this.value)"
+          onkeydown="handleSearchKeydown(event)"
+          class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 pl-9 pr-14 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner"
+        >
+        <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        </svg>
+        <div class="absolute right-2.5 top-2 flex items-center gap-1.5">
+          <button id="search-clear-btn" onclick="clearSearch()" class="hidden text-slate-400 hover:text-white p-0.5 rounded transition-colors" title="Clear Search">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+          <kbd class="hidden md:inline-block px-1.5 py-0.5 text-[9px] font-mono text-slate-500 bg-slate-900 border border-slate-800 rounded">⌘K</kbd>
+        </div>
+      </div>
+
+      <!-- Live Search Results Dropdown (Shows What's Inside) -->
+      <div id="search-results-dropdown" class="absolute left-0 right-0 top-full mt-2 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-2xl shadow-2xl overflow-hidden hidden z-50 max-h-96 flex flex-col">
+        <div class="p-2.5 border-b border-slate-800/80 bg-slate-950/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+          <span id="search-results-count">0 clients found</span>
+          <span class="text-[10px] text-emerald-400">Press Enter or click to inspect inside</span>
+        </div>
+        <div id="search-results-list" class="overflow-y-auto divide-y divide-slate-800/60 p-1.5 space-y-1">
+          <!-- Injected via JS -->
+        </div>
+      </div>
+    </div>
+
     <!-- Right Controls -->
     <div class="flex items-center gap-3">
       <div class="hidden md:flex items-center gap-2 text-xs font-mono bg-slate-950/60 border border-slate-800 px-3 py-1.5 rounded-lg text-slate-400">
@@ -51,10 +85,13 @@
     <!-- KPI ROW -->
     <section class="grid grid-cols-2 md:grid-cols-6 gap-3.5">
       <!-- KPI 1: Active Clients -->
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-all">
-        <div class="text-[11px] text-slate-400 font-medium">Active CAZ Clients</div>
+      <div onclick="switchFleetTable('active')" class="cursor-pointer bg-slate-900/90 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-4 shadow-sm relative overflow-hidden group transition-all">
+        <div class="text-[11px] text-slate-400 font-medium flex items-center justify-between">
+          <span>Active CAZ Clients</span>
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        </div>
         <div id="kpi-clients" class="text-2xl font-bold text-white mt-1 font-mono tracking-tight">--</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Projects in Mini-ERP</div>
+        <div id="kpi-clients-sub" class="text-[10px] text-slate-500 mt-0.5">-- Active • -- Lost</div>
       </div>
 
       <!-- KPI 2: Total Devices -->
@@ -105,41 +142,67 @@
     <section id="alerts-section" class="bg-slate-900 border border-rose-900/50 rounded-2xl p-5 shadow-lg hidden">
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-2">
-          <span class="text-lg">🚨</span>
-          <h2 class="text-sm font-bold text-white">Active Bad Alert & Diagnostics Triage Center</h2>
-          <span id="alerts-badge" class="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">0 Alerts</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+          <h2 class="text-sm font-bold text-rose-400 tracking-wide uppercase font-mono">Triage Required: Active Fleet Alerts</h2>
+          <span id="alerts-badge-count" class="bg-rose-950 text-rose-300 text-xs px-2 py-0.5 rounded-full font-bold border border-rose-800">--</span>
         </div>
-        <button onclick="toggleAlertsSection()" class="text-xs text-slate-400 hover:text-white">Dismiss</button>
+        <button onclick="toggleAlertsList()" class="text-xs text-slate-400 hover:text-white transition-colors" id="alerts-toggle-btn">View All ↓</button>
       </div>
-      <div id="alerts-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
-        <!-- Injected via JS -->
-      </div>
+      <div id="alerts-list" class="space-y-2 max-h-48 overflow-y-auto pr-1"></div>
     </section>
 
     <!-- CLIENT DIRECTORY & SEARCH BAR -->
     <section class="bg-slate-900 border border-slate-800 rounded-2xl shadow-lg overflow-hidden flex flex-col">
+      <!-- High-level Table Selector (Active Fleet vs Lost Accounts) -->
+      <div class="px-5 pt-3 pb-0 border-b border-slate-800 bg-slate-950/50 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <button onclick="switchFleetTable('active')" id="fleet-tab-active" class="flex items-center gap-2 px-4 py-2.5 border-b-2 border-emerald-500 text-emerald-400 font-bold text-xs transition-colors cursor-pointer">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            Active Fleet <span id="active-fleet-count" class="bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-mono">--</span>
+          </button>
+          <button onclick="switchFleetTable('lost')" id="fleet-tab-lost" class="flex items-center gap-2 px-4 py-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 font-bold text-xs transition-colors cursor-pointer">
+            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+            Lost Accounts <span id="lost-fleet-count" class="bg-rose-950/80 border border-rose-800/80 text-rose-300 px-2 py-0.5 rounded-full text-[10px] font-mono">--</span>
+          </button>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono py-2 hidden sm:block" id="fleet-table-mode-desc">
+          Showing active clients with running deployments
+        </div>
+      </div>
+
       <!-- Search & Filters Header -->
       <div class="p-5 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 class="text-base font-bold text-white">Clean Air Zone™ Client Fleet Directory</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Cross-referenced with Mini-ERP device specs, MongoDB billing & telemetry electrical health</p>
+          <h2 id="table-title" class="text-base font-bold text-white">Clean Air Zone™ Client Fleet Directory</h2>
+          <p id="table-subtitle" class="text-xs text-slate-400 mt-0.5">Cross-referenced with Mini-ERP device specs, MongoDB billing & telemetry electrical health</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
+          <!-- Country Filter Dropdown -->
+          <div class="relative">
+            <select 
+              id="country-filter" 
+              onchange="handleCountryFilter(this.value)"
+              class="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-medium transition-colors cursor-pointer"
+            >
+              <option value="all">🌍 All Countries</option>
+            </select>
+          </div>
+
           <!-- Search Box -->
-          <div class="relative min-w-[220px]">
+          <div class="relative min-w-[200px]">
             <input 
               type="text" 
               id="search-input" 
               placeholder="Search client, project, or city..." 
-              oninput="handleSearch(this.value)"
+              oninput="handleTableSearch(this.value)"
               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 pl-8 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
             >
             <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           </div>
 
           <!-- Quick Filter Tabs -->
-          <div class="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px] font-medium">
+          <div id="quick-filter-tabs" class="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px] font-medium">
             <button onclick="filterByTab('all')" id="tab-all" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white transition-all">All</button>
             <button onclick="filterByTab('critical')" id="tab-critical" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">🚨 Critical</button>
             <button onclick="filterByTab('unpaid')" id="tab-unpaid" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">💳 Unpaid</button>
@@ -155,14 +218,54 @@
         <table class="w-full text-left text-xs">
           <thead class="bg-slate-950/60 text-slate-400 font-mono uppercase text-[10px] tracking-wider border-b border-slate-800">
             <tr>
-              <th class="py-3 px-4">Client / Project Name</th>
-              <th class="py-3 px-4">Segment / City</th>
-              <th class="py-3 px-4">Billing Status</th>
-              <th class="py-3 px-4">Active Units</th>
-              <th class="py-3 px-4">Live SLA</th>
-              <th class="py-3 px-4">Energy (kWh)</th>
-              <th class="py-3 px-4">Maintenance</th>
-              <th class="py-3 px-4">Firmware / Health</th>
+              <th onclick="sortByColumn('client_name')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort A to Z / Z to A">
+                <div class="flex items-center gap-1.5">
+                  <span>Client / Project Name</span>
+                  <span id="sort-icon-client_name" class="text-[11px] text-emerald-400">▲</span>
+                </div>
+              </th>
+              <th onclick="sortByColumn('city')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Location & Segment">
+                <div class="flex items-center gap-1.5">
+                  <span>Segment / City</span>
+                  <span id="sort-icon-city" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
+                </div>
+              </th>
+              <th onclick="sortByColumn('billing')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Billing Status">
+                <div class="flex items-center gap-1.5">
+                  <span>Billing Status</span>
+                  <span id="sort-icon-billing" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
+                </div>
+              </th>
+              <th onclick="sortByColumn('device_count')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Device Count">
+                <div class="flex items-center gap-1.5">
+                  <span>Active Units</span>
+                  <span id="sort-icon-device_count" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
+                </div>
+              </th>
+              <th onclick="sortByColumn('uptime_pct')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Live SLA %">
+                <div class="flex items-center gap-1.5">
+                  <span>Live SLA</span>
+                  <span id="sort-icon-uptime_pct" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
+                </div>
+              </th>
+              <th onclick="sortByColumn('kwh')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Energy Usage">
+                <div class="flex items-center gap-1.5">
+                  <span>Energy (kWh)</span>
+                  <span id="sort-icon-kwh" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
+                </div>
+              </th>
+              <th onclick="sortByColumn('maint')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Maintenance Urgency">
+                <div class="flex items-center gap-1.5">
+                  <span>Maintenance</span>
+                  <span id="sort-icon-maint" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
+                </div>
+              </th>
+              <th onclick="sortByColumn('health')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Alerts & Firmware Health">
+                <div class="flex items-center gap-1.5">
+                  <span>Firmware / Health</span>
+                  <span id="sort-icon-health" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
+                </div>
+              </th>
               <th class="py-3 px-4 text-right">Action</th>
             </tr>
           </thead>
@@ -207,7 +310,7 @@
       </div>
 
       <!-- Drawer Scrollable Body -->
-      <div class="flex-1 overflow-y-auto p-6 space-y-6">
+      <div id="drawer-scroll-body" class="flex-1 overflow-y-auto p-6 space-y-6">
         
         <!-- Triple-Database Intelligence Card -->
         <div class="grid grid-cols-2 gap-3 text-xs">
@@ -230,6 +333,26 @@
             </div>
             <div id="drawer-erp-models" class="text-xs font-semibold text-slate-200 mt-1 line-clamp-2">--</div>
             <div id="drawer-erp-recon" class="text-[10px] text-slate-400">Telemetry Units: -- active</div>
+          </div>
+        </div>
+
+        <!-- Mini-ERP Hardware Inventory (Installed vs Takeout Breakdown) -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800/60 pb-2.5">
+            <div class="flex items-center gap-2">
+              <span class="text-sm">📋</span>
+              <span class="text-xs font-bold text-white">Mini-ERP Hardware Inventory</span>
+              <span class="text-[10px] text-slate-400 font-normal">(Installed vs Takeout)</span>
+            </div>
+            <div class="flex items-center gap-1.5" id="drawer-erp-badges">
+              <span id="drawer-erp-installed-badge" class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">-- Installed</span>
+              <span id="drawer-erp-takeout-badge" class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-rose-500/20 text-rose-400 border border-rose-500/30">-- Takeout</span>
+            </div>
+          </div>
+
+          <!-- Mini-ERP Devices List -->
+          <div id="drawer-erp-devices-list" class="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+            <!-- Injected via JS -->
           </div>
         </div>
 
@@ -285,6 +408,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=1.5.0"></script>
 </body>
 </html>

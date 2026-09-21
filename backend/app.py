@@ -37,12 +37,14 @@ def health_check():
 
 @app.get("/api/fleet/summary")
 def get_summary():
-    fleet_engine.refresh()
+    if not fleet_engine.is_cache_valid():
+        fleet_engine.refresh(background=True)
     return fleet_engine.cached_summary
 
 @app.get("/api/fleet/alerts")
 def get_alerts(severity: Optional[str] = None):
-    fleet_engine.refresh()
+    if not fleet_engine.is_cache_valid():
+        fleet_engine.refresh(background=True)
     alerts = fleet_engine.cached_alerts
     if severity:
         alerts = [a for a in alerts if a.get("severity", "").upper() == severity.upper()]
@@ -60,7 +62,8 @@ def get_clients(
     billing: Optional[str] = None,
     firmware: Optional[str] = None
 ):
-    fleet_engine.refresh()
+    if not fleet_engine.is_cache_valid():
+        fleet_engine.refresh(background=True)
     clients = fleet_engine.cached_clients
 
     if search:
@@ -106,6 +109,13 @@ def get_clients(
 @app.get("/api/fleet/client/{project_id}")
 @app.get("/api/fleet/clients/{project_id}")
 def get_client_detail(project_id: int):
+    detail = fleet_engine.cached_client_details.get(project_id)
+    if detail:
+        if not fleet_engine.is_cache_valid():
+            fleet_engine.refresh(background=True)
+        return detail
+    
+    # If not found in cache yet, try refreshing
     fleet_engine.refresh()
     detail = fleet_engine.cached_client_details.get(project_id)
     if not detail:
