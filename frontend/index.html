@@ -217,6 +217,18 @@
             </div>
           </div>
 
+          <!-- Region Filter Select in Top Header -->
+          <div class="hidden sm:flex items-center">
+            <select 
+              id="header-country-filter" 
+              onchange="handleCountryFilter(this.value)" 
+              class="bg-card border border-border rounded-full px-3 py-1.5 text-xs font-semibold text-foreground focus:outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors shadow-xs"
+              title="Filter fleet scope by country"
+            >
+              <option value="all">🌍 All Regions (Global)</option>
+            </select>
+          </div>
+
           <!-- Light/Dark Mode Switcher -->
           <button 
             onclick="toggleTheme()" 
@@ -260,6 +272,24 @@
             <span>📍</span>
             <span>View Coverage</span>
           </button>
+        </div>
+      </div>
+
+      <!-- FLEET REGION SELECTOR BAR -->
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-card border border-border px-4 py-3 rounded-xl shadow-xs">
+        <div class="flex items-center gap-2.5">
+          <span class="flex size-7 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold">🌐</span>
+          <div>
+            <div class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <span>Fleet Region Scope:</span>
+              <span id="overview-active-region-label" class="text-primary font-mono font-bold">🌍 Global Fleet</span>
+            </div>
+            <p class="text-[11px] text-muted-foreground">Calibrate Fleet Uptime SLA and telemetry diagnostics per country or view global fleet</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <div id="region-pills" class="flex items-center gap-1.5 flex-wrap"></div>
         </div>
       </div>
 
@@ -556,6 +586,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20260923g"></script>
+  <script src="/static/app.js?v=20260923h"></script>
 </body>
 </html>

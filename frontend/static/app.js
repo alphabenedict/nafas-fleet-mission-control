@@ -90,13 +90,23 @@ function updateTableTabCounts() {
 function handleCountryFilter(country) {
   fleetData.selectedCountry = country;
   fleetData.page = 1;
+
+  // Sync select elements
+  const cSel = document.getElementById('country-filter');
+  if (cSel && cSel.value !== country) cSel.value = country;
+  const hSel = document.getElementById('header-country-filter');
+  if (hSel && hSel.value !== country) hSel.value = country;
+
+  populateCountryFilter();
   renderKPIs();
   renderClientsTable();
 }
 
 function populateCountryFilter() {
-  const select = document.getElementById('country-filter');
-  if (!select) return;
+  const selects = [
+    document.getElementById('country-filter'),
+    document.getElementById('header-country-filter')
+  ].filter(Boolean);
 
   const mode = fleetData.currentTableMode || 'active';
   const targetClients = (fleetData.clients || []).filter(c => {
@@ -115,13 +125,55 @@ function populateCountryFilter() {
   const sortedCountries = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
   const current = fleetData.selectedCountry || 'all';
 
-  select.innerHTML = `
-    <option value="all">🌍 All Countries (${targetClients.length})</option>
+  const optionsHtml = `
+    <option value="all">🌍 All Regions (Global) (${targetClients.length})</option>
     ${sortedCountries.map(ctry => {
       const flag = getCountryFlag(ctry);
       return `<option value="${escapeHtml(ctry)}" ${current.toLowerCase() === ctry.toLowerCase() ? 'selected' : ''}>${flag} ${escapeHtml(ctry)} (${counts[ctry]})</option>`;
     }).join('')}
   `;
+
+  selects.forEach(sel => {
+    sel.innerHTML = optionsHtml;
+    sel.value = current;
+  });
+
+  // Render quick region pills above the 4 Metric Cards
+  const pillsContainer = document.getElementById('region-pills');
+  if (pillsContainer) {
+    const isGlobal = !current || current === 'all';
+    pillsContainer.innerHTML = `
+      <button 
+        onclick="handleCountryFilter('all')" 
+        class="px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${isGlobal ? 'bg-primary text-primary-foreground shadow-xs' : 'bg-muted text-muted-foreground hover:text-foreground'}"
+      >
+        🌍 All Regions (${targetClients.length})
+      </button>
+      ${sortedCountries.map(ctry => {
+        const flag = getCountryFlag(ctry);
+        const isActive = current.toLowerCase() === ctry.toLowerCase();
+        return `
+          <button 
+            onclick="handleCountryFilter('${escapeHtml(ctry)}')" 
+            class="px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${isActive ? 'bg-primary text-primary-foreground shadow-xs' : 'bg-muted text-muted-foreground hover:text-foreground'}"
+          >
+            <span>${flag}</span>
+            <span>${escapeHtml(ctry)}</span>
+            <span class="text-[10px] font-mono opacity-80 font-normal">(${counts[ctry]})</span>
+          </button>
+        `;
+      }).join('')}
+    `;
+  }
+
+  const regionLabel = document.getElementById('overview-active-region-label');
+  if (regionLabel) {
+    if (!current || current === 'all') {
+      regionLabel.innerText = '🌍 Global Fleet';
+    } else {
+      regionLabel.innerText = `${getCountryFlag(current)} ${current}`;
+    }
+  }
 }
 
 function toggleTheme() {
@@ -333,7 +385,7 @@ function renderKPIs() {
   const clientsSub = document.getElementById('kpi-clients-sub');
   if (clientsSub) {
     if (isAllCountries) {
-      clientsSub.innerText = `${activeCount} Active • ${lostCount} Lost`;
+      clientsSub.innerText = `Global: ${activeCount} Active • ${lostCount} Lost`;
     } else {
       clientsSub.innerText = `${flag} ${countryName}: ${activeCount} Active • ${lostCount} Lost`;
     }
@@ -355,7 +407,7 @@ function renderKPIs() {
   // 3. Fleet Uptime (SLA) Card
   const uptimeTitle = document.getElementById('kpi-uptime-title');
   if (uptimeTitle) {
-    uptimeTitle.innerText = isAllCountries ? 'Fleet Uptime (SLA)' : `${flag} ${countryName} Uptime (SLA)`;
+    uptimeTitle.innerText = isAllCountries ? 'Global Fleet Uptime (SLA)' : `${flag} ${countryName} Fleet Uptime (SLA)`;
   }
 
   const uptimeEl = document.getElementById('kpi-uptime');
@@ -369,7 +421,7 @@ function renderKPIs() {
   const uptimeSub = document.getElementById('kpi-uptime-sub');
   if (uptimeSub) {
     if (isAllCountries) {
-      uptimeSub.innerText = 'Global Fleet Target: >95.0%';
+      uptimeSub.innerText = `🌍 Global Target: >95.0% (${onlineDevices}/${totalDevices} online)`;
     } else {
       uptimeSub.innerText = `${flag} ${countryName} Target: >95.0% (${onlineDevices}/${totalDevices} online)`;
     }
