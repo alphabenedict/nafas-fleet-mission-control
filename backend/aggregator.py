@@ -402,6 +402,8 @@ class FleetAggregator:
             if loc_uuids:
                 max_retries = 2
                 for attempt in range(max_retries):
+                    raw_devices = []
+                    rooms_by_uuid = {}
                     try:
                         m_conn = get_mysql_connection()
                         with m_conn.cursor() as cursor:
@@ -432,6 +434,17 @@ class FleetAggregator:
                                 devs = cursor.fetchall()
                                 raw_devices.extend(devs)
                         m_conn.close()
+
+                        # Deduplicate devices by id / uuid as a safety net
+                        seen_dev_ids = set()
+                        deduped = []
+                        for d in raw_devices:
+                            d_key = d.get("id") or d.get("uuid")
+                            if d_key not in seen_dev_ids:
+                                seen_dev_ids.add(d_key)
+                                deduped.append(d)
+                        raw_devices = deduped
+
                         logger.info(f"MySQL devices fetch completed: {len(raw_devices)} active IoT devices loaded across {len(loc_uuids)} target locations.")
                         break
                     except Exception as e:
