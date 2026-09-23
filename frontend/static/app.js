@@ -51,26 +51,23 @@ function switchFleetTable(mode) {
   fleetData.currentTableMode = mode;
   fleetData.page = 1;
 
-  const btnActive = document.getElementById('fleet-tab-active');
-  const btnLost = document.getElementById('fleet-tab-lost');
-  const desc = document.getElementById('fleet-table-mode-desc');
+  const btnActive = document.getElementById('sidebar-tab-active') || document.getElementById('fleet-tab-active');
+  const btnLost = document.getElementById('sidebar-tab-lost') || document.getElementById('fleet-tab-lost');
+  const desc = document.getElementById('table-subtitle');
   const tableTitle = document.getElementById('table-title');
-  const tableSubtitle = document.getElementById('table-subtitle');
   const quickFilters = document.getElementById('quick-filter-tabs');
 
   if (mode === 'active') {
-    if (btnActive) btnActive.className = 'flex items-center gap-2 px-4 py-2.5 border-b-2 border-emerald-500 text-emerald-400 font-bold text-xs transition-colors cursor-pointer';
-    if (btnLost) btnLost.className = 'flex items-center gap-2 px-4 py-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 font-bold text-xs transition-colors cursor-pointer';
-    if (desc) desc.innerText = 'Showing active clients with running deployments';
-    if (tableTitle) tableTitle.innerText = 'Clean Air Zone™ Client Fleet Directory';
-    if (tableSubtitle) tableSubtitle.innerText = 'Cross-referenced with Mini-ERP device specs, MongoDB billing & telemetry electrical health';
+    if (btnActive) btnActive.className = 'w-full rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors bg-primary text-primary-foreground flex items-center justify-between cursor-pointer';
+    if (btnLost) btnLost.className = 'w-full rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-between cursor-pointer';
+    if (desc) desc.innerText = 'Monitoring all active zones and hardware specs across your fleet.';
+    if (tableTitle) tableTitle.innerText = 'Coverage overview';
     if (quickFilters) quickFilters.classList.remove('opacity-40', 'pointer-events-none');
   } else {
-    if (btnActive) btnActive.className = 'flex items-center gap-2 px-4 py-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 font-bold text-xs transition-colors cursor-pointer';
-    if (btnLost) btnLost.className = 'flex items-center gap-2 px-4 py-2.5 border-b-2 border-rose-500 text-rose-400 font-bold text-xs transition-colors cursor-pointer';
+    if (btnActive) btnActive.className = 'w-full rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-between cursor-pointer';
+    if (btnLost) btnLost.className = 'w-full rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors bg-destructive text-destructive-foreground flex items-center justify-between cursor-pointer';
     if (desc) desc.innerText = 'Showing decommissioned / churned accounts (Mini-ERP takeouts & hardware reconciliation)';
     if (tableTitle) tableTitle.innerText = 'Decommissioned & Lost Client Accounts';
-    if (tableSubtitle) tableSubtitle.innerText = 'Accounts flagged as LOST in NeonDB. Cross-referenced with Mini-ERP hardware takeouts';
     if (quickFilters) quickFilters.classList.add('opacity-40', 'pointer-events-none');
   }
 
@@ -125,8 +122,26 @@ function populateCountryFilter() {
   `;
 }
 
+function toggleTheme() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('nafas-theme', isDark ? 'dark' : 'light');
+  const icon = document.getElementById('theme-icon');
+  if (icon) icon.innerText = isDark ? '☀️' : '🌙';
+}
+
 // Initial Load
 document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('nafas-theme');
+  if (saved === 'light') {
+    document.documentElement.classList.remove('dark');
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.innerText = '🌙';
+  } else {
+    document.documentElement.classList.add('dark');
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.innerText = '☀️';
+  }
+
   fetchFleetData();
   // Auto-refresh every 60 seconds
   setInterval(fetchFleetData, 60000);
@@ -162,10 +177,10 @@ async function fetchFleetData() {
     const vpnDot = document.getElementById('vpn-dot');
     if (vpnEl) {
       vpnEl.innerText = 'VPN: Azure Alpha';
-      vpnEl.className = 'text-slate-300 font-medium';
+      vpnEl.className = 'text-[#A5B3A8] font-medium';
     }
     if (vpnDot) {
-      vpnDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+      vpnDot.className = 'w-2 h-2 rounded-full bg-[#91C851] animate-pulse';
     }
   } catch (err) {
     console.error('Failed to load fleet data:', err);
@@ -232,7 +247,7 @@ function renderKPIs() {
   
   const uptimeEl = document.getElementById('kpi-uptime');
   uptimeEl.innerText = `${s.global_uptime_pct || 0}%`;
-  if (s.global_uptime_pct >= 90) uptimeEl.className = 'text-2xl font-bold text-emerald-400 mt-1 font-mono tracking-tight';
+  if (s.global_uptime_pct >= 90) uptimeEl.className = 'text-2xl font-bold text-[#91C851] mt-1 font-mono tracking-tight';
   else if (s.global_uptime_pct >= 75) uptimeEl.className = 'text-2xl font-bold text-amber-400 mt-1 font-mono tracking-tight';
   else uptimeEl.className = 'text-2xl font-bold text-rose-400 mt-1 font-mono tracking-tight';
 
@@ -261,16 +276,19 @@ function renderKPIs() {
 function renderAlerts() {
   const alertsSec = document.getElementById('alerts-section');
   const alertsList = document.getElementById('alerts-list');
-  const badge = document.getElementById('alerts-badge') || document.getElementById('alerts-badge-count');
+  const badge = document.getElementById('alerts-badge');
+  const badgeCount = document.getElementById('alerts-badge-count');
 
   const alerts = fleetData.alerts || [];
   if (!alerts || alerts.length === 0) {
     if (alertsSec) alertsSec.classList.add('hidden');
+    if (badgeCount) badgeCount.innerText = '0';
     return;
   }
 
   if (alertsSec) alertsSec.classList.remove('hidden');
   if (badge) badge.innerText = `${alerts.length} Active Alerts`;
+  if (badgeCount) badgeCount.innerText = alerts.length;
 
   if (!alertsList) return;
   alertsList.innerHTML = alerts.slice(0, 10).map(a => {
@@ -303,10 +321,10 @@ function renderAlerts() {
           </div>
           <span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeClass}">${a.severity}</span>
         </div>
-        <p class="text-[11px] text-slate-300 leading-snug">${escapeHtml(a.message || '')}</p>
-        <div class="flex items-center justify-between pt-1 border-t border-slate-800/40 text-[10px]">
+        <p class="text-[11px] text-[#A5B3A8] leading-snug">${escapeHtml(a.message || '')}</p>
+        <div class="flex items-center justify-between pt-1 border-t border-[#29342c]/60 text-[10px]">
           <span class="text-slate-500 font-mono">${a.created_at ? new Date(a.created_at).toLocaleTimeString() : ''}</span>
-          ${a.project_id ? `<button onclick="openClientDetail(${a.project_id})" class="text-emerald-400 hover:text-emerald-300 font-semibold underline">Inspect Client &rarr;</button>` : ''}
+          ${a.project_id ? `<button onclick="openClientDetail(${a.project_id})" class="text-[#91C851] hover:underline font-semibold">Inspect Client &rarr;</button>` : ''}
         </div>
       </div>
     `;
@@ -323,18 +341,13 @@ function handleGlobalSearch(query) {
   fleetData.searchQuery = q;
   fleetData.page = 1;
 
-  // Keep table search input in sync
+  // Keep sidebar, header, and table search inputs in sync
+  const sidebarInput = document.getElementById('sidebar-search-input');
+  if (sidebarInput && sidebarInput.value !== query) sidebarInput.value = query;
+  const headerInput = document.getElementById('global-search-input');
+  if (headerInput && headerInput.value !== query) headerInput.value = query;
   const tableInput = document.getElementById('search-input');
-  if (tableInput && tableInput.value !== query) {
-    tableInput.value = query;
-  }
-
-  // Toggle clear button
-  const clearBtn = document.getElementById('search-clear-btn');
-  if (clearBtn) {
-    if (q) clearBtn.classList.remove('hidden');
-    else clearBtn.classList.add('hidden');
-  }
+  if (tableInput && tableInput.value !== query) tableInput.value = query;
 
   renderClientsTable();
   renderSearchResultsDropdown(q);
@@ -345,16 +358,12 @@ function handleTableSearch(query) {
   fleetData.searchQuery = q;
   fleetData.page = 1;
 
-  // Keep global search input in sync
-  const globalInput = document.getElementById('global-search-input');
-  if (globalInput && globalInput.value !== query) {
-    globalInput.value = query;
-  }
-
-  const clearBtn = document.getElementById('search-clear-btn');
-  if (clearBtn) {
-    if (q) clearBtn.classList.remove('hidden');
-    else clearBtn.classList.add('hidden');
+  const sidebarInput = document.getElementById('sidebar-search-input');
+  if (sidebarInput && sidebarInput.value !== query) sidebarInput.value = query;
+  const headerInput = document.getElementById('global-search-input');
+  if (headerInput && headerInput.value !== query) headerInput.value = query;
+  const tableInput = document.getElementById('search-input');
+  if (tableInput && tableInput.value !== query) tableInput.value = query;
   }
 
   renderClientsTable();
@@ -440,7 +449,7 @@ function renderSearchResultsDropdown(q) {
     const instCount = c.minierp_installed_count !== undefined ? c.minierp_installed_count : c.device_count;
     const outCount = c.minierp_takeout_count || 0;
 
-    let slaClass = 'text-emerald-400';
+    let slaClass = 'text-[#91C851]';
     if (c.uptime_pct < 50) slaClass = 'text-rose-400';
     else if (c.uptime_pct < 90) slaClass = 'text-amber-400';
 
@@ -449,32 +458,32 @@ function renderSearchResultsDropdown(q) {
     return `
       <div 
         onclick="selectSearchResult(${c.project_id})"
-        class="p-3 hover:bg-slate-800/80 cursor-pointer transition-all rounded-xl flex items-start justify-between gap-3 group border border-transparent hover:border-slate-700/80"
+        class="p-3 hover:bg-[#202923] cursor-pointer transition-all rounded-xl flex items-start justify-between gap-3 group border border-transparent hover:border-[#29342c]"
       >
         <div class="space-y-1 flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-bold text-white text-xs group-hover:text-emerald-400 transition-colors">${escapeHtml(c.client_name)}</span>
-            ${isLost ? `<span class="px-1.5 py-0.2 rounded font-bold text-[9px] bg-rose-950/90 text-rose-400 border border-rose-800 font-mono">LOST</span>` : ''}
-            <span class="text-[9px] text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded font-mono">${escapeHtml(c.segment || 'B2C')}</span>
-            <span class="text-[10px] text-slate-400 font-mono">${getCountryFlag(c.country)} ${escapeHtml(c.country || 'Indonesia')} • ${escapeHtml(c.city || 'Jakarta')}</span>
-            ${c.is_location_reconciled ? `<span class="text-[9px] text-cyan-400 bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">Auto-Linked</span>` : ''}
+            <span class="font-bold text-[#F4F6F4] text-xs group-hover:text-[#91C851] transition-colors">${escapeHtml(c.client_name)}</span>
+            ${isLost ? `<span class="brand-pill brand-pill-critical">LOST</span>` : ''}
+            <span class="text-[9px] text-[#A5B3A8] bg-[#202923] px-1.5 py-0.2 rounded font-mono">${escapeHtml(c.segment || 'B2C')}</span>
+            <span class="text-[10px] text-[#A5B3A8] font-mono">${getCountryFlag(c.country)} ${escapeHtml(c.country || 'Indonesia')} • ${escapeHtml(c.city || 'Jakarta')}</span>
+            ${c.is_location_reconciled ? `<span class="text-[9px] text-[#2DD4BF] bg-[#2DD4BF]/10 px-1.5 py-0.2 rounded border border-[#2DD4BF]/30">Auto-Linked</span>` : ''}
           </div>
-          <div class="text-[11px] text-slate-400 truncate">${escapeHtml(c.project_name)}</div>
+          <div class="text-[11px] text-[#A5B3A8] truncate">${escapeHtml(c.project_name)}</div>
           
           <!-- What's Inside Hardware & Telemetry Summary -->
           <div class="flex items-center gap-1.5 flex-wrap pt-0.5 text-[10px] font-mono">
-            <span class="px-1.5 py-0.2 rounded bg-slate-950 text-slate-300 border border-slate-800">
+            <span class="px-1.5 py-0.2 rounded bg-[#101412] text-[#F4F6F4] border border-[#29342c]">
               📦 ${c.online_count}/${c.device_count} Active (<span class="${slaClass} font-bold">${c.uptime_pct}% SLA</span>)
             </span>
-            <span class="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+            <span class="brand-pill brand-pill-success">
               🟢 ${instCount} Inst
             </span>
             ${outCount > 0 ? `
-              <span class="px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold">
+              <span class="brand-pill brand-pill-critical">
                 🔴 ${outCount} Out
               </span>
             ` : ''}
-            <span class="text-slate-400 truncate max-w-[260px] text-[10px]" title="${escapeHtml(modelsSummary)}">
+            <span class="text-[#A5B3A8] truncate max-w-[260px] text-[10px]" title="${escapeHtml(modelsSummary)}">
               🔍 ${escapeHtml(modelsSummary)}
             </span>
           </div>
@@ -482,7 +491,7 @@ function renderSearchResultsDropdown(q) {
 
         <button 
           onclick="event.stopPropagation(); selectSearchResult(${c.project_id})" 
-          class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex-shrink-0 transition-all shadow-sm group-hover:scale-105 flex items-center gap-1"
+          class="btn-brand-primary px-2.5 py-1.5 text-[11px] flex-shrink-0 transition-all shadow-sm group-hover:scale-105 flex items-center gap-1 cursor-pointer"
         >
           <span>Inspect</span>
           <span>&rarr;</span>
@@ -529,13 +538,13 @@ function filterByTab(tab) {
   fleetData.page = 1;
 
   // Update tab styles
-  ['all', 'critical', 'unpaid', 'overdue', 'outdated_fw', 'healthy'].forEach(t => {
+  ['all', 'critical', 'unpaid', 'overdue', 'healthy'].forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (el) {
       if (t === tab) {
-        el.className = 'px-2.5 py-1 rounded-lg bg-emerald-600 text-white transition-all font-semibold';
+        el.className = 'px-2.5 py-1 rounded-full bg-primary text-primary-foreground font-semibold transition-all';
       } else {
-        el.className = 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all';
+        el.className = 'px-2.5 py-1 rounded-full text-muted-foreground hover:text-foreground transition-all';
       }
     }
   });
@@ -642,10 +651,10 @@ function updateSortHeaders() {
     const el = document.getElementById(`sort-icon-${col}`);
     if (!el) return;
     if (fleetData.sortColumn === col) {
-      el.className = 'text-[11px] font-bold text-emerald-400';
+      el.className = 'text-[11px] font-bold text-[#91C851]';
       el.innerText = fleetData.sortDirection === 'asc' ? '▲' : '▼';
     } else {
-      el.className = 'text-[11px] text-slate-600 group-hover:text-slate-400';
+      el.className = 'text-[11px] text-[#A5B3A8]/40 group-hover:text-[#A5B3A8]';
       el.innerText = '↕';
     }
   });
@@ -686,108 +695,108 @@ function renderClientsTable() {
     const isLost = (c.project_status || '').toLowerCase() === 'lost';
 
     // SLA Pill
-    let slaBadge = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    let slaBadge = 'brand-pill brand-pill-success';
     let slaText = `${c.uptime_pct}%`;
     if (isLost) {
-      slaBadge = 'bg-slate-800 text-slate-400 border-slate-700';
+      slaBadge = 'brand-pill brand-pill-muted';
       slaText = 'INACTIVE';
     } else if (c.uptime_pct < 50) {
-      slaBadge = 'bg-rose-500/20 text-rose-400 border-rose-500/30';
+      slaBadge = 'brand-pill brand-pill-critical';
     } else if (c.uptime_pct < 90) {
-      slaBadge = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      slaBadge = 'brand-pill brand-pill-warning';
     }
 
     // Maintenance Badge
-    let maintBadge = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    let maintBadge = 'brand-pill brand-pill-success';
     let maintText = c.maint_days_remaining !== null ? `${c.maint_days_remaining}d remaining` : 'On Track';
     let maintSub = escapeHtml(c.maint_type || 'Filter Service');
     if (isLost) {
-      maintBadge = 'bg-slate-900 text-slate-400 border-slate-800';
+      maintBadge = 'brand-pill brand-pill-muted';
       maintText = c.end_date ? `End: ${c.end_date}` : 'Contract Closed';
       maintSub = 'Decommissioned';
     } else if (c.maint_status === 'OVERDUE') {
-      maintBadge = 'bg-rose-500/20 text-rose-400 border-rose-500/30 font-bold';
+      maintBadge = 'brand-pill brand-pill-critical font-bold';
       maintText = `${Math.abs(c.maint_days_remaining)}d Overdue`;
     } else if (c.maint_status === 'DUE_SOON') {
-      maintBadge = 'bg-amber-500/20 text-amber-400 border-amber-500/30 font-bold';
+      maintBadge = 'brand-pill brand-pill-warning font-bold';
       maintText = `Due in ${c.maint_days_remaining}d`;
     }
 
     // Billing Status Badge
-    let billingBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">B2B PO</span>';
+    let billingBadge = '<span class="brand-pill brand-pill-muted">B2B PO</span>';
     if (isLost) {
-      billingBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950/80 text-rose-400 border border-rose-800/80">LOST / CHURNED 🔴</span>';
+      billingBadge = '<span class="brand-pill brand-pill-critical">LOST / CHURNED 🔴</span>';
     } else if (c.billing_status === 'PAID') {
-      billingBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">PAID 🟢</span>';
+      billingBadge = '<span class="brand-pill brand-pill-success">PAID 🟢</span>';
     } else if (c.billing_status === 'OVERDUE_UNPAID') {
-      billingBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse">OVERDUE 🔴</span>';
+      billingBadge = '<span class="brand-pill brand-pill-critical animate-pulse">OVERDUE 🔴</span>';
     } else if (c.billing_status === 'PAYMENT_PENDING') {
-      billingBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">PENDING 🟡</span>';
+      billingBadge = '<span class="brand-pill brand-pill-warning">PENDING 🟡</span>';
     }
 
     // Health Tags (Critical Alert / Old FW)
-    let healthPill = '<span class="text-[11px] text-emerald-400 font-semibold">Healthy</span>';
+    let healthPill = '<span class="brand-pill brand-pill-success">Healthy</span>';
     if (isLost) {
-      healthPill = '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-900 text-slate-400 border border-slate-800">Archived</span>';
+      healthPill = '<span class="brand-pill brand-pill-muted">Archived</span>';
     } else if (c.has_critical_alert) {
-      healthPill = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">🚨 Critical Alert</span>';
+      healthPill = '<span class="brand-pill brand-pill-critical">🚨 Critical Alert</span>';
     } else if (c.outdated_fw_count > 0) {
-      healthPill = `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">⚠️ ${c.outdated_fw_count} Old FW</span>`;
+      healthPill = `<span class="brand-pill brand-pill-warning">⚠️ ${c.outdated_fw_count} Old FW</span>`;
     }
 
     return `
-      <tr class="hover:bg-slate-800/40 transition-colors group">
+      <tr class="hover:bg-muted/40 transition-colors group">
         <td class="py-3 px-4">
-          <div class="font-bold text-white group-hover:text-emerald-400 transition-colors flex items-center gap-1.5 flex-wrap">
+          <div class="font-bold text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 flex-wrap">
             <span>${escapeHtml(c.client_name)}</span>
-            ${isLost ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-950/90 text-rose-400 border border-rose-800 font-mono shadow-sm">LOST</span>` : ''}
-            ${c.is_location_reconciled ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-950/80 text-cyan-400 border border-cyan-700/60" title="Auto-reconciled from MySQL location: ${escapeHtml(c.reconciled_location_name)}">🔄 Auto-Linked</span>` : ''}
+            ${isLost ? `<span class="brand-pill brand-pill-critical">LOST</span>` : ''}
+            ${c.is_location_reconciled ? `<span class="text-[9px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5 rounded-full" title="Auto-reconciled from MySQL location: ${escapeHtml(c.reconciled_location_name)}">🔄 Auto-Linked</span>` : ''}
           </div>
-          <div class="text-[11px] text-slate-400">${escapeHtml(c.project_name)}</div>
+          <div class="text-[11px] text-muted-foreground">${escapeHtml(c.project_name)}</div>
           ${c.is_location_reconciled ? `<div class="text-[10px] text-cyan-400 font-mono mt-0.5 flex items-center gap-1"><span>📍</span> ${escapeHtml(c.reconciled_location_name)}</div>` : ''}
         </td>
         <td class="py-3 px-4">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">${escapeHtml(c.segment || 'B2C')}</span>
-            <span class="text-[10px] font-mono text-slate-300 bg-slate-950/80 px-1.5 py-0.5 rounded border border-slate-800">${getCountryFlag(c.country)} ${escapeHtml(c.country || 'Indonesia')}</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-muted text-foreground border border-border">${escapeHtml(c.segment || 'B2C')}</span>
+            <span class="text-[10px] font-mono text-muted-foreground bg-background px-2 py-0.5 rounded-full border border-border">${getCountryFlag(c.country)} ${escapeHtml(c.country || 'Indonesia')}</span>
           </div>
-          <div class="text-[11px] text-slate-400 mt-1 flex items-center gap-1"><span>📍</span> ${escapeHtml(c.city || 'Jakarta')}</div>
+          <div class="text-[11px] text-muted-foreground mt-1 flex items-center gap-1"><span>📍</span> ${escapeHtml(c.city || 'Jakarta')}</div>
         </td>
         <td class="py-3 px-4">
           ${billingBadge}
         </td>
         <td class="py-3 px-4 font-mono">
-          <div class="flex items-center gap-1.5 font-bold ${c.offline_count > 0 ? 'text-amber-400' : 'text-emerald-400'}">
+          <div class="flex items-center gap-1.5 font-bold ${c.offline_count > 0 ? 'text-amber-500' : 'text-primary'}">
             <span>${c.online_count}/${c.device_count}</span>
-            <span class="text-[10px] font-normal text-slate-500">units</span>
+            <span class="text-[10px] font-normal text-muted-foreground">units</span>
           </div>
           ${c.minierp_planned_count ? `
-            <div class="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
+            <div class="text-[9px] text-muted-foreground flex items-center gap-1 mt-0.5">
               <span>ERP:</span>
-              <span class="text-emerald-400 font-semibold">${c.minierp_installed_count !== undefined ? c.minierp_installed_count : c.minierp_planned_count} inst</span>
-              ${c.minierp_takeout_count ? `<span class="text-rose-400 font-semibold">/ ${c.minierp_takeout_count} out</span>` : ''}
+              <span class="text-primary font-semibold">${c.minierp_installed_count !== undefined ? c.minierp_installed_count : c.minierp_planned_count} inst</span>
+              ${c.minierp_takeout_count ? `<span class="text-destructive font-semibold">/ ${c.minierp_takeout_count} out</span>` : ''}
             </div>
           ` : ''}
         </td>
         <td class="py-3 px-4">
-          <span class="px-2 py-0.5 rounded-full text-[11px] font-bold font-mono border ${slaBadge}">
+          <span class="${slaBadge} font-mono">
             ${slaText}
           </span>
         </td>
-        <td class="py-3 px-4 font-mono text-cyan-300 font-semibold">
+        <td class="py-3 px-4 font-mono text-[#2DD4BF] font-semibold">
           ${c.total_kwh ? c.total_kwh.toFixed(1) + ' kWh' : '0.0 kWh'}
         </td>
         <td class="py-3 px-4">
-          <span class="px-2 py-0.5 rounded text-[10px] border ${maintBadge}">
+          <span class="${maintBadge}">
             ${maintText}
           </span>
-          <div class="text-[10px] text-slate-400 mt-0.5">${maintSub}</div>
+          <div class="text-[10px] text-muted-foreground mt-0.5">${maintSub}</div>
         </td>
         <td class="py-3 px-4">
           ${healthPill}
         </td>
         <td class="py-3 px-4 text-right">
-          <button onclick="openClientDetail(${c.project_id})" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-emerald-600 text-white font-semibold text-xs transition-all shadow-sm">
+          <button onclick="openClientDetail(${c.project_id})" class="btn-replit-secondary text-xs">
             Inspect
           </button>
         </td>
@@ -817,8 +826,8 @@ function resetDrawerLoading(projectId) {
   document.getElementById('drawer-client-name').innerHTML = `
     <span class="flex items-center gap-2">
       <span>${clientName}</span>
-      <span class="inline-flex items-center text-xs font-normal text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded animate-pulse">
-        <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-emerald-400" fill="none" viewBox="0 0 24 24">
+      <span class="inline-flex items-center text-xs font-normal text-[#91C851] bg-[#91C851]/15 border border-[#91C851]/30 px-2 py-0.5 rounded-full animate-pulse">
+        <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-[#91C851]" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
@@ -828,7 +837,7 @@ function resetDrawerLoading(projectId) {
   `;
   document.getElementById('drawer-project-sub').innerText = `Project ID: #${projectId} | ${projectName}`;
   document.getElementById('drawer-segment-badge').innerText = segment;
-  document.getElementById('drawer-billing-badge').className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700';
+  document.getElementById('drawer-billing-badge').className = 'brand-pill brand-pill-muted';
   document.getElementById('drawer-billing-badge').innerText = 'Syncing...';
   document.getElementById('drawer-city-label').innerText = city;
 
@@ -921,13 +930,14 @@ function renderDrawerContent(data) {
   const c = data.client_info;
   normalizeClientCountryCity(c);
   const billing = data.billing || {};
+  const erpDevices = data.minierp_devices || [];
   const isLost = (c.project_status || '').toLowerCase() === 'lost';
 
   if (isLost) {
     document.getElementById('drawer-client-name').innerHTML = `
       <div class="flex items-center gap-2">
         <span>${escapeHtml(c.client_name)}</span>
-        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950/80 text-rose-400 border border-rose-800 font-mono">LOST</span>
+        <span class="brand-pill brand-pill-critical">LOST</span>
       </div>
     `;
     document.getElementById('drawer-project-sub').innerHTML = `
@@ -946,8 +956,8 @@ function renderDrawerContent(data) {
   
   if (c.is_location_reconciled) {
     document.getElementById('drawer-loc-uuid').innerHTML = `
-      <span class="text-slate-400">Location:</span> <span class="text-cyan-300 font-semibold font-mono">📍 ${escapeHtml(c.reconciled_location_name)}</span> 
-      <span class="text-[10px] text-cyan-400 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60 ml-1">⚡ Auto-Linked (${escapeHtml(c.location_uuid)})</span>
+      <span class="text-[#A5B3A8]">Location:</span> <span class="text-[#2DD4BF] font-semibold font-mono">📍 ${escapeHtml(c.reconciled_location_name)}</span> 
+      <span class="text-[10px] text-[#2DD4BF] bg-[#2DD4BF]/10 px-1.5 py-0.5 rounded border border-[#2DD4BF]/30 ml-1">⚡ Auto-Linked (${escapeHtml(c.location_uuid)})</span>
     `;
   } else {
     document.getElementById('drawer-loc-uuid').innerText = `Location UUID: ${c.location_uuid || 'N/A'}`;
@@ -961,24 +971,24 @@ function renderDrawerContent(data) {
   const bDue = document.getElementById('drawer-b-due');
 
   if (c.billing_status === 'PAID') {
-    bBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+    bBadge.className = 'brand-pill brand-pill-success';
     bBadge.innerText = 'Paid 🟢';
-    bStatus.className = 'px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-bold';
+    bStatus.className = 'brand-pill brand-pill-success text-[9px]';
     bStatus.innerText = 'PAID (GOOD STANDING)';
   } else if (c.billing_status === 'OVERDUE_UNPAID') {
-    bBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30';
+    bBadge.className = 'brand-pill brand-pill-critical';
     bBadge.innerText = 'Overdue 🔴';
-    bStatus.className = 'px-1.5 py-0.2 rounded text-[9px] bg-rose-500/20 text-rose-400 font-bold animate-pulse';
+    bStatus.className = 'brand-pill brand-pill-critical text-[9px] animate-pulse';
     bStatus.innerText = 'OVERDUE / UNPAID';
   } else if (c.billing_status === 'PAYMENT_PENDING') {
-    bBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+    bBadge.className = 'brand-pill brand-pill-warning';
     bBadge.innerText = 'Pending 🟡';
-    bStatus.className = 'px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 font-bold';
+    bStatus.className = 'brand-pill brand-pill-warning text-[9px]';
     bStatus.innerText = 'PAYMENT PENDING';
   } else {
-    bBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700';
+    bBadge.className = 'brand-pill brand-pill-muted';
     bBadge.innerText = 'B2B PO ⚪';
-    bStatus.className = 'px-1.5 py-0.2 rounded text-[9px] bg-slate-800 text-slate-300';
+    bStatus.className = 'brand-pill brand-pill-muted text-[9px]';
     bStatus.innerText = 'OFFLINE CONTRACT';
   }
 
@@ -1005,13 +1015,16 @@ function renderDrawerContent(data) {
 
   const instBadge = document.getElementById('drawer-erp-installed-badge');
   const outBadge = document.getElementById('drawer-erp-takeout-badge');
-  if (instBadge) instBadge.innerText = `${installedCount} Installed`;
+  if (instBadge) {
+    instBadge.className = 'brand-pill brand-pill-success';
+    instBadge.innerText = `${installedCount} Installed`;
+  }
   if (outBadge) {
     outBadge.innerText = `${takeoutCount} Takeout`;
     if (takeoutCount > 0) {
-      outBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse';
+      outBadge.className = 'brand-pill brand-pill-critical font-mono animate-pulse';
     } else {
-      outBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-slate-800 text-slate-400 border border-slate-700';
+      outBadge.className = 'brand-pill brand-pill-muted font-mono';
     }
   }
 
@@ -1019,28 +1032,28 @@ function renderDrawerContent(data) {
   const erpListEl = document.getElementById('drawer-erp-devices-list');
   if (erpListEl) {
     if (erpDevices.length === 0) {
-      erpListEl.innerHTML = `<div class="text-xs text-slate-500 font-mono py-3 text-center">No hardware devices planned in Mini-ERP for this project.</div>`;
+      erpListEl.innerHTML = `<div class="text-xs text-[#A5B3A8] font-mono py-3 text-center">No hardware devices planned in Mini-ERP for this project.</div>`;
     } else {
       erpListEl.innerHTML = erpDevices.map(ed => {
         const isTakeout = ed.normalized_status === 'Takeout';
         const isSpare = ed.normalized_status === 'Spare';
         
-        let statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🟢 Installed</span>`;
+        let statusBadge = `<span class="brand-pill brand-pill-success font-mono">🟢 Installed</span>`;
         if (isTakeout) {
-          statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-rose-500/20 text-rose-400 border border-rose-500/40">🔴 Takeout</span>`;
+          statusBadge = `<span class="brand-pill brand-pill-critical font-mono">🔴 Takeout</span>`;
         } else if (isSpare) {
-          statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30">🟡 Spare</span>`;
+          statusBadge = `<span class="brand-pill brand-pill-warning font-mono">🟡 Spare</span>`;
         }
 
         let telemetryBadge = '';
         if (ed.in_telemetry) {
           if (ed.connectivity === 'online') {
-            telemetryBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-700/50">⚡ Online</span>`;
+            telemetryBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#91C851]/15 text-[#91C851] border border-[#91C851]/30">⚡ Online</span>`;
           } else {
-            telemetryBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-950/60 text-rose-400 border border-rose-800/40">Offline</span>`;
+            telemetryBadge = `<span class="brand-pill brand-pill-critical text-[9px] font-mono">Offline</span>`;
           }
         } else {
-          telemetryBadge = `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-500 bg-slate-900 border border-slate-800">No Signal</span>`;
+          telemetryBadge = `<span class="brand-pill brand-pill-muted text-[9px] font-mono">No Signal</span>`;
         }
 
         const dateInfo = isTakeout && ed.takeout_date 
@@ -1048,17 +1061,17 @@ function renderDrawerContent(data) {
           : (ed.installed_date ? `<span class="text-slate-400 font-mono">Installed: ${escapeHtml(String(ed.installed_date).slice(0, 10))}</span>` : '');
 
         return `
-          <div class="flex items-center justify-between p-2.5 rounded-xl border ${isTakeout ? 'border-rose-900/50 bg-rose-950/20' : 'border-slate-800/80 bg-slate-900/60'} text-xs">
+          <div class="flex items-center justify-between p-2.5 rounded-xl border ${isTakeout ? 'border-rose-900/50 bg-rose-950/20' : 'border-[#29342c] bg-[#101412]'} text-xs">
             <div class="space-y-0.5">
               <div class="flex items-center gap-2">
-                <span class="font-bold text-white font-mono">${escapeHtml(ed.device_id || 'Unnamed Device')}</span>
-                <span class="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded font-mono">${escapeHtml(ed.device_item_type || ed.device_type || 'Unit')}</span>
+                <span class="font-bold text-[#F4F6F4] font-mono">${escapeHtml(ed.device_id || 'Unnamed Device')}</span>
+                <span class="text-[10px] text-[#A5B3A8] bg-[#202923] border border-[#29342c] px-1.5 py-0.2 rounded font-mono">${escapeHtml(ed.device_item_type || ed.device_type || 'Unit')}</span>
                 ${telemetryBadge}
               </div>
-              <div class="text-[11px] text-slate-400 flex items-center gap-2 flex-wrap">
+              <div class="text-[11px] text-[#A5B3A8] flex items-center gap-2 flex-wrap">
                 <span>📍 ${escapeHtml(ed.room_name || 'Room')}</span>
                 ${dateInfo ? `<span>•</span> ${dateInfo}` : ''}
-                ${ed.notes ? `<span>•</span> <span class="italic text-slate-400 max-w-[200px] truncate" title="${escapeHtml(ed.notes)}">${escapeHtml(ed.notes)}</span>` : ''}
+                ${ed.notes ? `<span>•</span> <span class="italic text-[#A5B3A8] max-w-[200px] truncate" title="${escapeHtml(ed.notes)}">${escapeHtml(ed.notes)}</span>` : ''}
               </div>
             </div>
             <div class="pl-2 flex-shrink-0">
@@ -1078,13 +1091,13 @@ function renderDrawerContent(data) {
 
   const mBadge = document.getElementById('drawer-maint-badge');
   if (c.maint_status === 'OVERDUE') {
-    mBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30';
+    mBadge.className = 'brand-pill brand-pill-critical font-bold';
     mBadge.innerText = `${Math.abs(c.maint_days_remaining)}d Overdue`;
   } else if (c.maint_status === 'DUE_SOON') {
-    mBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+    mBadge.className = 'brand-pill brand-pill-warning font-bold';
     mBadge.innerText = `Due in ${c.maint_days_remaining}d`;
   } else {
-    mBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+    mBadge.className = 'brand-pill brand-pill-success';
     mBadge.innerText = 'On Track';
   }
 
@@ -1095,7 +1108,7 @@ function renderDrawerContent(data) {
 
   if (roomKeys.length === 0) {
     roomsList.innerHTML = `
-      <div class="bg-slate-950/40 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 text-xs font-mono">
+      <div class="bg-[#101412] border border-dashed border-[#29342c] rounded-xl p-8 text-center text-[#A5B3A8] text-xs font-mono">
         No telemetry devices transmitting for this location.
       </div>
     `;
@@ -1103,12 +1116,12 @@ function renderDrawerContent(data) {
     roomsList.innerHTML = roomKeys.map(rName => {
       const devs = rooms[rName];
       return `
-        <div class="bg-slate-950/90 border border-slate-800/80 rounded-2xl p-4 space-y-3">
-          <div class="flex items-center justify-between border-b border-slate-800/60 pb-2">
-            <span class="text-xs font-bold text-white flex items-center gap-1.5">
+        <div class="bg-[#101412] border border-[#29342c] rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-[#29342c] pb-2">
+            <span class="text-xs font-bold text-[#F4F6F4] flex items-center gap-1.5">
               <span>📍</span> ${escapeHtml(rName)}
             </span>
-            <span class="text-[11px] font-mono text-slate-400">${devs.length} device(s)</span>
+            <span class="text-[11px] font-mono text-[#A5B3A8]">${devs.length} device(s)</span>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             ${devs.map(renderDeviceCard).join('')}
@@ -1122,17 +1135,17 @@ function renderDrawerContent(data) {
   const reportsList = document.getElementById('drawer-reports-list');
   const reports = data.fieldwork_reports || [];
   if (reports.length === 0) {
-    reportsList.innerHTML = `<div class="text-xs text-slate-500 font-mono py-2">No fieldwork service logs on record.</div>`;
+    reportsList.innerHTML = `<div class="text-xs text-[#A5B3A8] font-mono py-2">No fieldwork service logs on record.</div>`;
   } else {
     reportsList.innerHTML = reports.slice(0, 5).map(r => `
-      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/80 text-xs space-y-1.5">
+      <div class="bg-[#101412] p-3 rounded-xl border border-[#29342c] text-xs space-y-1.5">
         <div class="flex items-center justify-between">
-          <span class="font-bold text-slate-200">${escapeHtml(r.activity_type || 'Maintenance')}</span>
-          <span class="font-mono text-slate-400 text-[10px]">${r.activity_date || 'N/A'}</span>
+          <span class="font-bold text-[#F4F6F4]">${escapeHtml(r.activity_type || 'Maintenance')}</span>
+          <span class="font-mono text-[#A5B3A8] text-[10px]">${r.activity_date || 'N/A'}</span>
         </div>
-        <div class="text-slate-400 text-[11px]">Technician: <span class="text-slate-200">${escapeHtml(r.technician_name || 'Assigned Tech')}</span></div>
+        <div class="text-[#A5B3A8] text-[11px]">Technician: <span class="text-[#F4F6F4]">${escapeHtml(r.technician_name || 'Assigned Tech')}</span></div>
         ${r.problem_description ? `<div class="text-rose-400 text-[11px]">Problem: ${escapeHtml(r.problem_description)}</div>` : ''}
-        ${r.action_taken ? `<div class="text-emerald-400 text-[11px]">Action: ${escapeHtml(r.action_taken)}</div>` : ''}
+        ${r.action_taken ? `<div class="text-[#91C851] text-[11px]">Action: ${escapeHtml(r.action_taken)}</div>` : ''}
       </div>
     `).join('');
   }
@@ -1150,33 +1163,33 @@ function renderDeviceCard(d) {
   // Firmware tag
   const isOldFw = d.is_firmware_outdated;
   const fwTag = d.device_firmware 
-    ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono ${isOldFw ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800 text-slate-400'}">FW: ${d.device_firmware}${isOldFw ? ' ⚠️' : ''}</span>`
+    ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono ${isOldFw ? 'brand-pill brand-pill-warning' : 'brand-pill brand-pill-muted'}">FW: ${d.device_firmware}${isOldFw ? ' ⚠️' : ''}</span>`
     : '';
 
   // Mini-ERP status tag
   let erpTag = '';
   if (d.erp_status === 'Takeout') {
-    erpTag = `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse" title="Flagged as TAKEOUT in Mini-ERP!">⚠️ ERP: Takeout</span>`;
+    erpTag = `<span class="brand-pill brand-pill-critical animate-pulse font-mono" title="Flagged as TAKEOUT in Mini-ERP!">⚠️ ERP: Takeout</span>`;
   } else if (d.erp_status === 'Installed') {
-    erpTag = `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">✓ ERP: Installed</span>`;
+    erpTag = `<span class="brand-pill brand-pill-success font-mono">✓ ERP: Installed</span>`;
   } else if (d.erp_status === 'Spare') {
-    erpTag = `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">ERP: Spare</span>`;
+    erpTag = `<span class="brand-pill brand-pill-warning font-mono">ERP: Spare</span>`;
   } else if (d.erp_status === 'Unregistered') {
-    erpTag = `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-slate-800 text-slate-500 border border-slate-700">ERP: Unregistered</span>`;
+    erpTag = `<span class="brand-pill brand-pill-muted font-mono">ERP: Unregistered</span>`;
   }
 
   return `
-    <div class="bg-slate-900 border ${isOnline ? 'border-slate-800' : 'border-rose-900/40'} rounded-xl p-3 flex flex-col justify-between space-y-2.5">
+    <div class="bg-[#171c19] border ${isOnline ? 'border-[#29342c]' : 'border-rose-900/40'} rounded-xl p-3 flex flex-col justify-between space-y-2.5">
       <div>
         <div class="flex items-start justify-between">
           <div>
-            <div class="text-xs font-bold text-white flex items-center gap-1.5">
+            <div class="text-xs font-bold text-[#F4F6F4] flex items-center gap-1.5">
               <span>${isPurifier ? '🌀' : '📡'}</span>
               <span>${escapeHtml(d.device_name || 'Device')}</span>
             </div>
-            <div class="text-[10px] font-mono text-slate-400 mt-0.5">${escapeHtml(d.vendor_device_id || d.device_type)}</div>
+            <div class="text-[10px] font-mono text-[#A5B3A8] mt-0.5">${escapeHtml(d.vendor_device_id || d.device_type)}</div>
           </div>
-          <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${isOnline ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}">
+          <span class="brand-pill ${isOnline ? 'brand-pill-success' : 'brand-pill-critical'} font-mono">
             ${d.connectivity || 'offline'}
           </span>
         </div>
@@ -1184,24 +1197,24 @@ function renderDeviceCard(d) {
         <div class="flex flex-wrap items-center gap-1 mt-1.5">
           ${erpTag}
           ${fwTag}
-          ${isPurifier ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-cyan-950/60 text-cyan-400 border border-cyan-800/40">⚡ ${kwh} kWh</span>` : ''}
-          ${d.speed ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-slate-800 text-slate-300">Speed ${d.speed}</span>` : ''}
+          ${isPurifier ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-[#2DD4BF]/10 text-[#2DD4BF] border border-[#2DD4BF]/30">⚡ ${kwh} kWh</span>` : ''}
+          ${d.speed ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono bg-[#202923] text-[#F4F6F4] border border-[#29342c]">Speed ${d.speed}</span>` : ''}
         </div>
       </div>
 
       <!-- Sensor Metrics Grid -->
-      <div class="grid grid-cols-2 gap-1.5 text-[11px] font-mono bg-slate-950/60 p-2 rounded-lg">
+      <div class="grid grid-cols-2 gap-1.5 text-[11px] font-mono bg-[#101412] p-2 rounded-lg border border-[#29342c]/60">
         ${meas.pm25 !== undefined ? `
-          <div class="text-slate-400">PM₂.₅: <span class="font-bold ${meas.pm25 > 25 ? 'text-rose-400' : 'text-emerald-400'}">${meas.pm25} µg/m³</span></div>
+          <div class="text-[#A5B3A8]">PM₂.₅: <span class="font-bold ${meas.pm25 > 25 ? 'text-rose-400' : 'text-[#91C851]'}">${meas.pm25} µg/m³</span></div>
         ` : ''}
         ${meas.co2 !== undefined ? `
-          <div class="text-slate-400">CO₂: <span class="font-bold ${meas.co2 > 1200 ? 'text-amber-400' : 'text-slate-200'}">${meas.co2} ppm</span></div>
+          <div class="text-[#A5B3A8]">CO₂: <span class="font-bold ${meas.co2 > 1200 ? 'text-amber-400' : 'text-[#F4F6F4]'}">${meas.co2} ppm</span></div>
         ` : ''}
         ${filterLife !== null ? `
-          <div class="text-slate-400">Filter: <span class="font-bold ${filterLife < 15 ? 'text-rose-400' : 'text-emerald-400'}">${filterLife}%</span></div>
+          <div class="text-[#A5B3A8]">Filter: <span class="font-bold ${filterLife < 15 ? 'text-rose-400' : 'text-[#91C851]'}">${filterLife}%</span></div>
         ` : ''}
         ${meas.coin_batt !== undefined ? `
-          <div class="text-slate-400">Coin Batt: <span class="font-bold text-slate-300">${Number(meas.coin_batt).toFixed(2)}V</span></div>
+          <div class="text-[#A5B3A8]">Coin Batt: <span class="font-bold text-[#F4F6F4]">${Number(meas.coin_batt).toFixed(2)}V</span></div>
         ` : ''}
       </div>
     </div>

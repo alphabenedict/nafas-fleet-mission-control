@@ -4,410 +4,558 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nafas Clean Air Zone™ | Fleet Mission Control</title>
-  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            border: 'hsl(var(--border))',
+            input: 'hsl(var(--input))',
+            ring: 'hsl(var(--ring))',
+            background: 'hsl(var(--background))',
+            foreground: 'hsl(var(--foreground))',
+            primary: {
+              DEFAULT: 'hsl(var(--primary))',
+              foreground: 'hsl(var(--primary-foreground))',
+              border: 'hsl(var(--primary-border))',
+            },
+            secondary: {
+              DEFAULT: 'hsl(var(--secondary))',
+              foreground: 'hsl(var(--secondary-foreground))',
+              border: 'hsl(var(--secondary-border))',
+            },
+            destructive: {
+              DEFAULT: 'hsl(var(--destructive))',
+              foreground: 'hsl(var(--destructive-foreground))',
+              border: 'hsl(var(--destructive-border))',
+            },
+            muted: {
+              DEFAULT: 'hsl(var(--muted))',
+              foreground: 'hsl(var(--muted-foreground))',
+            },
+            accent: {
+              DEFAULT: 'hsl(var(--accent))',
+              foreground: 'hsl(var(--accent-foreground))',
+            },
+            card: {
+              DEFAULT: 'hsl(var(--card))',
+              foreground: 'hsl(var(--card-foreground))',
+            },
+            sidebar: {
+              DEFAULT: 'hsl(var(--sidebar))',
+              foreground: 'hsl(var(--sidebar-foreground))',
+              border: 'hsl(var(--sidebar-border))',
+              accent: 'hsl(var(--sidebar-accent))',
+              'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+            },
+            'brand-surface': {
+              DEFAULT: 'hsl(var(--brand-surface))',
+              foreground: 'hsl(var(--brand-surface-foreground))',
+            },
+            success: 'hsl(var(--success))',
+          },
+          borderRadius: {
+            lg: 'var(--radius)',
+            md: 'calc(var(--radius) - 2px)',
+            sm: 'calc(var(--radius) - 4px)',
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['Geist Mono', 'JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="icon" type="image/png" href="/static/nafas-logo.png">
+  <link rel="stylesheet" href="/static/style.css?v=20260923d">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
-<body class="bg-slate-950 text-slate-100 font-['Plus_Jakarta_Sans',sans-serif] antialiased min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
+<body class="min-h-screen bg-background text-foreground antialiased font-sans selection:bg-primary selection:text-primary-foreground">
 
-  <!-- TOP APP BAR -->
-  <header class="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center font-black text-slate-950 text-base shadow-lg shadow-emerald-500/20">
-          N
-        </div>
-        <div>
-          <div class="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-            <span>Clean Air Zone™ Fleet Mission Control</span>
-            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">TRIPLE FEDERATION</span>
+  <!-- APP SHELL: 272px Sidebar + Main Content Grid -->
+  <div class="min-h-screen md:grid md:grid-cols-[272px_minmax(0,1fr)]">
+
+    <!-- 1. LEFT SIDEBAR -->
+    <aside class="border-b bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:flex-col md:border-b-0 md:border-r border-sidebar-border">
+      
+      <!-- Brand Surface -->
+      <div class="border-b border-sidebar-border bg-brand-surface px-5 py-5 text-brand-surface-foreground">
+        <div class="flex items-center gap-3">
+          <img src="/static/nafas-logo.png" alt="Nafas" class="h-6 w-auto object-contain dark:invert-0 invert transition-all" />
+          <span class="h-5 w-px bg-sidebar-border"></span>
+          <div>
+            <div class="text-sm font-semibold tracking-tight text-foreground">Mission Control</div>
+            <div class="text-[10px] text-muted-foreground font-mono">Clean Air Zone™ Fleet</div>
           </div>
-          <div class="text-[11px] text-slate-400">MySQL Telemetry • NeonDB Mini-ERP • MongoDB Billing & Subscriptions</div>
         </div>
+        <p class="mt-3 text-xs text-muted-foreground">Triple Federation: MySQL • NeonDB • MongoDB</p>
       </div>
-    </div>
 
-    <!-- Center Omnisearch Bar with Quick Preview -->
-    <div id="global-search-container" class="relative flex-1 max-w-md mx-4 hidden lg:block">
-      <div class="relative">
-        <input 
-          type="text" 
-          id="global-search-input" 
-          placeholder="🔍 Search client by name (e.g. iShine, Botanica)..." 
-          oninput="handleGlobalSearch(this.value)"
-          onkeydown="handleSearchKeydown(event)"
-          class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 pl-9 pr-14 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner"
-        >
-        <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-        </svg>
-        <div class="absolute right-2.5 top-2 flex items-center gap-1.5">
-          <button id="search-clear-btn" onclick="clearSearch()" class="hidden text-slate-400 hover:text-white p-0.5 rounded transition-colors" title="Clear Search">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-          </button>
-          <kbd class="hidden md:inline-block px-1.5 py-0.5 text-[9px] font-mono text-slate-500 bg-slate-900 border border-slate-800 rounded">⌘K</kbd>
+      <!-- Quick Search inside Sidebar -->
+      <div class="p-4 pb-2">
+        <div class="relative">
+          <svg class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          <input 
+            type="text" 
+            id="sidebar-search-input" 
+            placeholder="Search fleet client…" 
+            oninput="handleGlobalSearch(this.value)" 
+            class="w-full pl-9 pr-3 py-1.5 bg-background/80 border border-sidebar-border rounded-lg text-xs placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors text-foreground"
+          >
         </div>
       </div>
 
-      <!-- Live Search Results Dropdown (Shows What's Inside) -->
-      <div id="search-results-dropdown" class="absolute left-0 right-0 top-full mt-2 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-2xl shadow-2xl overflow-hidden hidden z-50 max-h-96 flex flex-col">
-        <div class="p-2.5 border-b border-slate-800/80 bg-slate-950/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-          <span id="search-results-count">0 clients found</span>
-          <span class="text-[10px] text-emerald-400">Press Enter or click to inspect inside</span>
-        </div>
-        <div id="search-results-list" class="overflow-y-auto divide-y divide-slate-800/60 p-1.5 space-y-1">
-          <!-- Injected via JS -->
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Controls -->
-    <div class="flex items-center gap-3">
-      <div class="hidden md:flex items-center gap-2 text-xs font-mono bg-slate-950/60 border border-slate-800 px-3 py-1.5 rounded-lg text-slate-400">
-        <span id="vpn-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span id="vpn-status">VPN: Azure Alpha</span>
-        <span class="text-slate-600">|</span>
-        <span id="last-sync-time">Syncing...</span>
-      </div>
-
-      <button id="refresh-btn" onclick="triggerManualRefresh()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md shadow-emerald-600/20 active:scale-95">
-        <svg id="refresh-icon" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-        <span>Sync Telemetry</span>
-      </button>
-    </div>
-  </header>
-
-  <!-- MAIN CONTAINER -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-
-    <!-- KPI ROW -->
-    <section class="grid grid-cols-2 md:grid-cols-6 gap-3.5">
-      <!-- KPI 1: Active Clients -->
-      <div onclick="switchFleetTable('active')" class="cursor-pointer bg-slate-900/90 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-4 shadow-sm relative overflow-hidden group transition-all">
-        <div class="text-[11px] text-slate-400 font-medium flex items-center justify-between">
-          <span>Active CAZ Clients</span>
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        </div>
-        <div id="kpi-clients" class="text-2xl font-bold text-white mt-1 font-mono tracking-tight">--</div>
-        <div id="kpi-clients-sub" class="text-[10px] text-slate-500 mt-0.5">-- Active • -- Lost</div>
-      </div>
-
-      <!-- KPI 2: Total Devices -->
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-all">
-        <div class="text-[11px] text-slate-400 font-medium">Deployed Devices</div>
-        <div id="kpi-devices" class="text-2xl font-bold text-white mt-1 font-mono tracking-tight">--</div>
-        <div id="kpi-device-sub" class="text-[10px] text-slate-500 mt-0.5">-- Online / -- Offline</div>
-      </div>
-
-      <!-- KPI 3: Global Uptime -->
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-all">
-        <div class="text-[11px] text-slate-400 font-medium">Global Fleet SLA</div>
-        <div id="kpi-uptime" class="text-2xl font-bold text-emerald-400 mt-1 font-mono tracking-tight">--%</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Target: &gt;95.0%</div>
-      </div>
-
-      <!-- KPI 4: Fleet Energy (kWh) -->
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-all">
-        <div class="text-[11px] text-cyan-400 font-medium flex items-center gap-1">
-          <span>⚡</span> Total Energy
-        </div>
-        <div id="kpi-kwh" class="text-2xl font-bold text-cyan-400 mt-1 font-mono tracking-tight">-- kWh</div>
-        <div class="text-[10px] text-cyan-500/70 mt-0.5">Cumulative Power Draw</div>
-      </div>
-
-      <!-- KPI 5: Billing Health (MongoDB) -->
-      <div onclick="filterByTab('unpaid')" class="cursor-pointer bg-slate-900/90 border border-slate-800 hover:border-indigo-500 rounded-2xl p-4 shadow-sm relative overflow-hidden group transition-all">
-        <div class="text-[11px] text-indigo-400 font-medium flex items-center justify-between">
-          <span>💳 Paid Health</span>
-          <span id="kpi-unpaid-dot" class="w-2 h-2 rounded-full bg-rose-500 hidden animate-pulse"></span>
-        </div>
-        <div id="kpi-billing" class="text-2xl font-bold text-indigo-300 mt-1 font-mono tracking-tight">-- Paid</div>
-        <div id="kpi-billing-sub" class="text-[10px] text-slate-500 mt-0.5">-- Overdue / -- Pending</div>
-      </div>
-
-      <!-- KPI 6: Critical Alerts -->
-      <div onclick="filterByTab('critical')" class="cursor-pointer bg-slate-900/90 border border-rose-900/40 hover:border-rose-700 rounded-2xl p-4 shadow-sm relative overflow-hidden group transition-all">
-        <div class="text-[11px] text-rose-400 font-medium flex items-center justify-between">
-          <span>Critical Bad Alerts</span>
-          <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
-        </div>
-        <div id="kpi-critical" class="text-2xl font-bold text-rose-400 mt-1 font-mono tracking-tight">--</div>
-        <div class="text-[10px] text-rose-400/70 mt-0.5">Dropouts / Delinquent</div>
-      </div>
-    </section>
-
-    <!-- ACTIVE ALERTS TRIAGE BANNER (Collapsible) -->
-    <section id="alerts-section" class="bg-slate-900 border border-rose-900/50 rounded-2xl p-5 shadow-lg hidden">
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2">
-          <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
-          <h2 class="text-sm font-bold text-rose-400 tracking-wide uppercase font-mono">Triage Required: Active Fleet Alerts</h2>
-          <span id="alerts-badge" class="bg-rose-950 text-rose-300 text-xs px-2 py-0.5 rounded-full font-bold border border-rose-800">--</span>
-        </div>
-        <button onclick="toggleAlertsSection()" class="text-xs text-slate-400 hover:text-white transition-colors" id="alerts-toggle-btn">Dismiss ✕</button>
-      </div>
-      <div id="alerts-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1"></div>
-    </section>
-
-    <!-- CLIENT DIRECTORY & SEARCH BAR -->
-    <section class="bg-slate-900 border border-slate-800 rounded-2xl shadow-lg overflow-hidden flex flex-col">
-      <!-- High-level Table Selector (Active Fleet vs Lost Accounts) -->
-      <div class="px-5 pt-3 pb-0 border-b border-slate-800 bg-slate-950/50 flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
-          <button onclick="switchFleetTable('active')" id="fleet-tab-active" class="flex items-center gap-2 px-4 py-2.5 border-b-2 border-emerald-500 text-emerald-400 font-bold text-xs transition-colors cursor-pointer">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            Active Fleet <span id="active-fleet-count" class="bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-mono">--</span>
-          </button>
-          <button onclick="switchFleetTable('lost')" id="fleet-tab-lost" class="flex items-center gap-2 px-4 py-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 font-bold text-xs transition-colors cursor-pointer">
-            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
-            Lost Accounts <span id="lost-fleet-count" class="bg-rose-950/80 border border-rose-800/80 text-rose-300 px-2 py-0.5 rounded-full text-[10px] font-mono">--</span>
-          </button>
-        </div>
-        <div class="text-[11px] text-slate-500 font-mono py-2 hidden sm:block" id="fleet-table-mode-desc">
-          Showing active clients with running deployments
-        </div>
-      </div>
-
-      <!-- Search & Filters Header -->
-      <div class="p-5 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <!-- Navigation Items -->
+      <nav aria-label="Design system navigation" class="flex-1 overflow-y-auto px-4 py-2 space-y-5">
         <div>
-          <h2 id="table-title" class="text-base font-bold text-white">Clean Air Zone™ Client Fleet Directory</h2>
-          <p id="table-subtitle" class="text-xs text-slate-400 mt-0.5">Cross-referenced with Mini-ERP device specs, MongoDB billing & telemetry electrical health</p>
+          <p class="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Fleet Operations</p>
+          <div class="mt-2 space-y-1 border-l border-sidebar-border pl-2">
+            <button 
+              id="sidebar-tab-active" 
+              onclick="switchFleetTable('active')" 
+              class="w-full rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors bg-primary text-primary-foreground flex items-center justify-between cursor-pointer"
+            >
+              <span class="flex items-center gap-2">
+                <span>🟢</span> Active Fleet
+              </span>
+              <span id="active-fleet-count" class="text-xs font-mono font-bold">258</span>
+            </button>
+            <button 
+              id="sidebar-tab-lost" 
+              onclick="switchFleetTable('lost')" 
+              class="w-full rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-between cursor-pointer"
+            >
+              <span class="flex items-center gap-2">
+                <span>🔴</span> Lost Accounts
+              </span>
+              <span id="lost-fleet-count" class="text-xs font-mono font-bold">21</span>
+            </button>
+            <button 
+              onclick="toggleAlertsSection()" 
+              class="w-full rounded-md px-2 py-1.5 text-left text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-between cursor-pointer"
+            >
+              <span class="flex items-center gap-2">
+                <span>🚨</span> Active Alerts
+              </span>
+              <span id="alerts-badge-count" class="text-xs font-mono font-bold text-destructive">61</span>
+            </button>
+          </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
-          <!-- Country Filter Dropdown -->
-          <div class="relative">
+        <div>
+          <p class="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Quick Filters</p>
+          <div class="mt-2 space-y-1 border-l border-sidebar-border pl-2">
+            <button onclick="filterByTab('all')" class="w-full rounded-md px-2 py-1 text-left text-xs transition-colors text-foreground hover:bg-muted cursor-pointer">All Running Clients</button>
+            <button onclick="filterByTab('critical')" class="w-full rounded-md px-2 py-1 text-left text-xs transition-colors text-destructive hover:bg-muted cursor-pointer">Critical Alerts</button>
+            <button onclick="filterByTab('unpaid')" class="w-full rounded-md px-2 py-1 text-left text-xs transition-colors text-amber-500 hover:bg-muted cursor-pointer">Overdue Payments</button>
+            <button onclick="filterByTab('overdue')" class="w-full rounded-md px-2 py-1 text-left text-xs transition-colors text-muted-foreground hover:bg-muted cursor-pointer">Maintenance Due</button>
+            <button onclick="filterByTab('healthy')" class="w-full rounded-md px-2 py-1 text-left text-xs transition-colors text-primary hover:bg-muted cursor-pointer">Healthy (&gt;90% SLA)</button>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Bottom Status & Telemetry Sync -->
+      <div class="border-t border-sidebar-border p-4 space-y-3 bg-brand-surface/40">
+        <div class="flex items-center justify-between text-xs font-mono text-muted-foreground">
+          <div class="flex items-center gap-2">
+            <span id="vpn-dot" class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+            <span id="vpn-status">VPN: Azure Alpha</span>
+          </div>
+          <span id="last-sync-time" class="text-[10px]">Syncing...</span>
+        </div>
+        <button 
+          id="refresh-btn" 
+          onclick="triggerManualRefresh()" 
+          class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-full bg-primary hover:bg-[#a3d964] text-primary-foreground font-semibold text-xs transition-all shadow-sm active:scale-98 cursor-pointer"
+        >
+          <svg id="refresh-icon" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          <span>Sync Telemetry</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- 2. MAIN OPERATIONAL WORKSPACE -->
+    <main class="min-w-0 px-5 py-6 sm:px-8 lg:px-12 space-y-6">
+
+      <!-- Header with Title, Mode & Theme Toggle -->
+      <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fleet Mission Control</p>
+          <h1 id="page-main-heading" class="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Clean Air Zone™ Operations</h1>
+          <p id="page-main-desc" class="mt-1 text-sm text-muted-foreground">Live telemetry electrical health cross-referenced with Mini-ERP hardware & MongoDB billing.</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <!-- Search Bar in Header -->
+          <div id="global-search-container" class="relative hidden sm:block w-72">
+            <svg class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+            <input 
+              type="text" 
+              id="global-search-input" 
+              placeholder="Search clients (⌘K)…" 
+              oninput="handleGlobalSearch(this.value)" 
+              class="w-full pl-9 pr-8 py-1.5 bg-card border border-border rounded-full text-xs placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-all text-foreground"
+            >
+            <kbd class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground bg-muted border border-border rounded">⌘K</kbd>
+            
+            <!-- Live Search Results Dropdown -->
+            <div id="search-results-dropdown" class="absolute left-0 right-0 top-full mt-2 bg-card border border-border rounded-xl shadow-2xl overflow-hidden hidden z-50 max-h-96 flex flex-col">
+              <div class="p-2.5 border-b border-border bg-muted/40 flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                <span id="search-results-count">0 clients found</span>
+                <span class="text-[10px] text-primary">Click to inspect</span>
+              </div>
+              <div id="search-results-list" class="overflow-y-auto divide-y divide-border/60 p-1.5 space-y-1"></div>
+            </div>
+          </div>
+
+          <!-- Light/Dark Mode Switcher -->
+          <button 
+            onclick="toggleTheme()" 
+            class="inline-flex items-center justify-center size-9 rounded-full border border-border bg-card text-foreground hover:bg-muted transition-colors cursor-pointer" 
+            title="Toggle Light / Dark Theme"
+          >
+            <span id="theme-icon">☀️</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Alert Triage Center (Collapsible) -->
+      <section id="alerts-section" class="hidden rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-base">🚨</span>
+            <h3 class="text-sm font-semibold text-destructive">Critical Fleet Alerts Triaged</h3>
+          </div>
+          <button onclick="toggleAlertsSection()" class="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+        </div>
+        <div id="alerts-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      </section>
+
+      <!-- HERO BANNER CARD (From Replit applied.tsx!) -->
+      <div class="rounded-xl border border-primary/20 bg-gradient-to-br from-accent/40 via-card to-card p-6 shadow-xs flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
+        <div>
+          <div class="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <span class="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs">
+              <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </span>
+            <span>Live operations</span>
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">Good air, in motion.</h2>
+          <p class="mt-2 max-w-xl text-sm text-muted-foreground">A clear view of your air-quality fleet, from city-wide health to the next mission.</p>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <button 
+            onclick="document.getElementById('table-card').scrollIntoView({behavior: 'smooth'})" 
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold text-xs shadow-xs hover:bg-[#a3d964] transition-all cursor-pointer"
+          >
+            <span>📍</span>
+            <span>View Coverage</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 TOP METRIC CARDS (From Replit applied.tsx!) -->
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <!-- Active Zones / Clients -->
+        <div onclick="switchFleetTable('active')" class="rounded-xl border border-border bg-card p-5 shadow-xs transition-all hover:border-primary/40 cursor-pointer">
+          <div class="flex items-center justify-between text-sm font-medium text-muted-foreground">
+            <span>Active Clients</span>
+            <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+          </div>
+          <p id="kpi-clients" class="text-2xl font-bold font-mono text-foreground mt-2">--</p>
+          <p id="kpi-clients-sub" class="mt-1 text-xs text-muted-foreground">-- Active • -- Lost</p>
+        </div>
+
+        <!-- Deployed Devices -->
+        <div class="rounded-xl border border-border bg-card p-5 shadow-xs transition-all hover:border-primary/40">
+          <div class="flex items-center justify-between text-sm font-medium text-muted-foreground">
+            <span>Deployed Devices</span>
+            <span class="text-xs">📦</span>
+          </div>
+          <p id="kpi-devices" class="text-2xl font-bold font-mono text-foreground mt-2">--</p>
+          <p id="kpi-device-sub" class="mt-1 text-xs text-muted-foreground">-- Online / -- Offline</p>
+        </div>
+
+        <!-- Fleet Uptime -->
+        <div class="rounded-xl border border-border bg-card p-5 shadow-xs transition-all hover:border-primary/40">
+          <div class="flex items-center justify-between text-sm font-medium text-muted-foreground">
+            <span>Fleet Uptime (SLA)</span>
+            <span class="text-xs text-primary font-bold">↗</span>
+          </div>
+          <p id="kpi-uptime" class="text-2xl font-bold font-mono text-primary mt-2">--%</p>
+          <p class="mt-1 text-xs text-muted-foreground">Target: &gt;95.0%</p>
+        </div>
+
+        <!-- Cumulative Energy -->
+        <div class="rounded-xl border border-border bg-card p-5 shadow-xs transition-all hover:border-cyan-500/40">
+          <div class="flex items-center justify-between text-sm font-medium text-muted-foreground">
+            <span class="text-[#2DD4BF]">Fleet Energy Draw</span>
+            <span class="text-xs">⚡</span>
+          </div>
+          <p id="kpi-kwh" class="text-2xl font-bold font-mono text-[#2DD4BF] mt-2">-- kWh</p>
+          <p class="mt-1 text-xs text-muted-foreground">Cumulative Telemetry kWh</p>
+        </div>
+      </div>
+
+      <!-- COVERAGE OVERVIEW CARD & TABLE (From Replit applied.tsx!) -->
+      <div id="table-card" class="rounded-xl border border-border bg-card text-card-foreground shadow-xs">
+        
+        <!-- Card Header with Controls -->
+        <div class="p-6 border-b border-border flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h3 id="table-title" class="font-semibold text-lg leading-none tracking-tight text-foreground">Coverage overview</h3>
+            <p id="table-subtitle" class="mt-1 text-sm text-muted-foreground">Monitoring all active zones and hardware specs across your fleet.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5">
+            <!-- Table Search Input -->
+            <div class="relative w-full sm:w-56">
+              <svg class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              </svg>
+              <input 
+                id="search-input" 
+                type="text" 
+                placeholder="Search zones…" 
+                oninput="handleTableSearch(this.value)" 
+                class="w-full pl-9 pr-3 py-1.5 bg-background border border-input rounded-full text-xs placeholder:text-muted-foreground focus:outline-none focus:border-primary text-foreground"
+              >
+            </div>
+
+            <!-- Country Filter Select -->
             <select 
               id="country-filter" 
-              onchange="handleCountryFilter(this.value)"
-              class="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-medium transition-colors cursor-pointer"
+              onchange="handleCountryFilter(this.value)" 
+              class="bg-background border border-input rounded-full px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
             >
               <option value="all">🌍 All Countries</option>
             </select>
-          </div>
 
-          <!-- Search Box -->
-          <div class="relative min-w-[200px]">
-            <input 
-              type="text" 
-              id="search-input" 
-              placeholder="Search client, project, or city..." 
-              oninput="handleTableSearch(this.value)"
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 pl-8 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-            >
-            <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-          </div>
-
-          <!-- Quick Filter Tabs -->
-          <div id="quick-filter-tabs" class="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px] font-medium">
-            <button onclick="filterByTab('all')" id="tab-all" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white transition-all">All</button>
-            <button onclick="filterByTab('critical')" id="tab-critical" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">🚨 Critical</button>
-            <button onclick="filterByTab('unpaid')" id="tab-unpaid" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">💳 Unpaid</button>
-            <button onclick="filterByTab('overdue')" id="tab-overdue" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">⏳ Service Due</button>
-            <button onclick="filterByTab('outdated_fw')" id="tab-outdated_fw" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">⚠️ Old FW</button>
-            <button onclick="filterByTab('healthy')" id="tab-healthy" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-all">🟢 Healthy</button>
+            <!-- Quick Filter Tabs -->
+            <div id="quick-filter-tabs" class="flex items-center gap-1 bg-muted p-1 rounded-full text-xs">
+              <button id="tab-all" onclick="filterByTab('all')" class="px-2.5 py-1 rounded-full bg-primary text-primary-foreground font-semibold transition-all">All</button>
+              <button id="tab-critical" onclick="filterByTab('critical')" class="px-2.5 py-1 rounded-full text-muted-foreground hover:text-foreground transition-all">Critical</button>
+              <button id="tab-unpaid" onclick="filterByTab('unpaid')" class="px-2.5 py-1 rounded-full text-muted-foreground hover:text-foreground transition-all">Unpaid</button>
+              <button id="tab-overdue" onclick="filterByTab('overdue')" class="px-2.5 py-1 rounded-full text-muted-foreground hover:text-foreground transition-all">Service Due</button>
+              <button id="tab-healthy" onclick="filterByTab('healthy')" class="px-2.5 py-1 rounded-full text-muted-foreground hover:text-foreground transition-all">Healthy</button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Clients Table -->
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead class="bg-slate-950/60 text-slate-400 font-mono uppercase text-[10px] tracking-wider border-b border-slate-800">
-            <tr>
-              <th onclick="sortByColumn('client_name')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort A to Z / Z to A">
-                <div class="flex items-center gap-1.5">
-                  <span>Client / Project Name</span>
-                  <span id="sort-icon-client_name" class="text-[11px] text-emerald-400">▲</span>
-                </div>
-              </th>
-              <th onclick="sortByColumn('city')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Location & Segment">
-                <div class="flex items-center gap-1.5">
-                  <span>Segment / City</span>
-                  <span id="sort-icon-city" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
-                </div>
-              </th>
-              <th onclick="sortByColumn('billing')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Billing Status">
-                <div class="flex items-center gap-1.5">
-                  <span>Billing Status</span>
-                  <span id="sort-icon-billing" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
-                </div>
-              </th>
-              <th onclick="sortByColumn('device_count')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Device Count">
-                <div class="flex items-center gap-1.5">
-                  <span>Active Units</span>
-                  <span id="sort-icon-device_count" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
-                </div>
-              </th>
-              <th onclick="sortByColumn('uptime_pct')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Live SLA %">
-                <div class="flex items-center gap-1.5">
-                  <span>Live SLA</span>
-                  <span id="sort-icon-uptime_pct" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
-                </div>
-              </th>
-              <th onclick="sortByColumn('kwh')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Energy Usage">
-                <div class="flex items-center gap-1.5">
-                  <span>Energy (kWh)</span>
-                  <span id="sort-icon-kwh" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
-                </div>
-              </th>
-              <th onclick="sortByColumn('maint')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Maintenance Urgency">
-                <div class="flex items-center gap-1.5">
-                  <span>Maintenance</span>
-                  <span id="sort-icon-maint" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
-                </div>
-              </th>
-              <th onclick="sortByColumn('health')" class="py-3 px-4 cursor-pointer select-none hover:text-white transition-colors group" title="Click to sort by Alerts & Firmware Health">
-                <div class="flex items-center gap-1.5">
-                  <span>Firmware / Health</span>
-                  <span id="sort-icon-health" class="text-[11px] text-slate-600 group-hover:text-slate-400">↕</span>
-                </div>
-              </th>
-              <th class="py-3 px-4 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody id="clients-tbody" class="divide-y divide-slate-800/60 text-slate-300">
-            <!-- Injected via JS -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Table Footer / Pagination -->
-      <div class="p-4 border-t border-slate-800/80 bg-slate-950/40 flex items-center justify-between text-xs text-slate-400">
-        <div id="table-count-label">Showing 0 of 0 clients</div>
-        <div class="flex items-center gap-2">
-          <button id="prev-page-btn" onclick="changePage(-1)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white disabled:opacity-40 disabled:pointer-events-none">Prev</button>
-          <span id="page-num-label" class="font-mono text-slate-300">Page 1</span>
-          <button id="next-page-btn" onclick="changePage(1)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white disabled:opacity-40 disabled:pointer-events-none">Next</button>
+        <!-- Table Content -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-muted/50 text-muted-foreground font-mono uppercase text-[11px] tracking-wider border-b border-border">
+              <tr>
+                <th onclick="sortByColumn('client_name')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>Zone / Client</span>
+                    <span id="sort-icon-client_name" class="text-primary text-[10px]">▲</span>
+                  </div>
+                </th>
+                <th onclick="sortByColumn('city')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>City / Country</span>
+                    <span id="sort-icon-city" class="text-muted-foreground text-[10px]">↕</span>
+                  </div>
+                </th>
+                <th onclick="sortByColumn('billing')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>Billing Status</span>
+                    <span id="sort-icon-billing" class="text-muted-foreground text-[10px]">↕</span>
+                  </div>
+                </th>
+                <th onclick="sortByColumn('device_count')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>Hardware BOM</span>
+                    <span id="sort-icon-device_count" class="text-muted-foreground text-[10px]">↕</span>
+                  </div>
+                </th>
+                <th onclick="sortByColumn('uptime_pct')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>Uptime SLA</span>
+                    <span id="sort-icon-uptime_pct" class="text-muted-foreground text-[10px]">↕</span>
+                  </div>
+                </th>
+                <th onclick="sortByColumn('kwh')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>Energy (kWh)</span>
+                    <span id="sort-icon-kwh" class="text-muted-foreground text-[10px]">↕</span>
+                  </div>
+                </th>
+                <th onclick="sortByColumn('maint')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>Maintenance</span>
+                    <span id="sort-icon-maint" class="text-muted-foreground text-[10px]">↕</span>
+                  </div>
+                </th>
+                <th onclick="sortByColumn('health')" class="py-3 px-4 font-semibold cursor-pointer hover:text-foreground group">
+                  <div class="flex items-center gap-1">
+                    <span>Health</span>
+                    <span id="sort-icon-health" class="text-muted-foreground text-[10px]">↕</span>
+                  </div>
+                </th>
+                <th class="py-3 px-4 text-right font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody id="clients-tbody" class="divide-y divide-border/60">
+              <tr>
+                <td colspan="9" class="text-center py-12 text-muted-foreground font-mono">
+                  Loading client intelligence records...
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-      </div>
-    </section>
-  </main>
 
-  <!-- CLIENT DETAIL SLIDE-OVER DRAWER MODAL -->
-  <div id="detail-drawer" class="fixed inset-0 z-50 overflow-hidden hidden">
-    <!-- Backdrop -->
-    <div onclick="closeDrawer()" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"></div>
-
-    <div class="fixed inset-y-0 right-0 max-w-2xl w-full bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col z-10 transform transition-transform">
-      <!-- Drawer Header -->
-      <div class="p-6 border-b border-slate-800 flex items-start justify-between bg-slate-950/50">
-        <div>
+        <!-- Table Footer Pagination -->
+        <div class="p-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground font-medium">
+          <div id="table-count-label">Showing 0 of 0 clients</div>
           <div class="flex items-center gap-2">
-            <span id="drawer-segment-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">B2C</span>
-            <span id="drawer-billing-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Paid</span>
-            <span id="drawer-city-label" class="text-xs text-slate-400 font-mono">Jakarta, Indonesia</span>
+            <button id="prev-page-btn" onclick="changePage(-1)" class="px-3 py-1.5 rounded-full border border-border bg-card text-foreground hover:bg-muted disabled:opacity-40 transition-colors cursor-pointer">Previous</button>
+            <span id="page-num-label" class="px-2 font-mono">Page 1 of 1</span>
+            <button id="next-page-btn" onclick="changePage(1)" class="px-3 py-1.5 rounded-full border border-border bg-card text-foreground hover:bg-muted disabled:opacity-40 transition-colors cursor-pointer">Next</button>
           </div>
-          <h2 id="drawer-client-name" class="text-xl font-bold text-white mt-1">Client Name</h2>
-          <div id="drawer-project-sub" class="text-xs text-slate-400 mt-0.5">Project ID: -- | Contract: --</div>
         </div>
-        <button onclick="closeDrawer()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white">
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- SLIDE-OVER DETAIL DRAWER -->
+  <div id="detail-drawer" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm flex justify-end transition-opacity">
+    <div class="w-full max-w-2xl bg-card border-l border-border h-full shadow-2xl flex flex-col">
+      <!-- Drawer Header -->
+      <div class="p-6 border-b border-border flex items-start justify-between bg-muted/30">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h2 id="drawer-client-name" class="text-xl font-bold text-foreground">Client Detail</h2>
+            <span id="drawer-segment-badge" class="badge-outline text-[10px]">B2B</span>
+            <span id="drawer-billing-badge" class="badge-secondary text-[10px]">Syncing...</span>
+          </div>
+          <p id="drawer-project-sub" class="text-xs text-muted-foreground mt-1">Project Information</p>
+          <div class="text-xs font-mono text-muted-foreground mt-1 flex items-center gap-2">
+            <span id="drawer-city-label">📍 Jakarta, Indonesia</span>
+            <span>•</span>
+            <span id="drawer-device-count">-- Online</span>
+          </div>
+          <div id="drawer-loc-uuid" class="text-[11px] font-mono text-muted-foreground mt-1">Location UUID: --</div>
+        </div>
+        <button onclick="closeDrawer()" class="p-2 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
         </button>
       </div>
 
-      <!-- Drawer Scrollable Body -->
+      <!-- Drawer Scroll Body -->
       <div id="drawer-scroll-body" class="flex-1 overflow-y-auto p-6 space-y-6">
         
-        <!-- Triple-Database Intelligence Card -->
-        <div class="grid grid-cols-2 gap-3 text-xs">
-          <!-- MongoDB Billing Info -->
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
-            <div class="text-[10px] font-mono text-indigo-400 font-bold uppercase tracking-wider flex items-center justify-between">
-              <span>MongoDB Billing</span>
-              <span id="drawer-b-status" class="px-1.5 py-0.2 rounded text-[9px] bg-indigo-500/20 text-indigo-300">PAID</span>
+        <!-- 2 Summary Cards (MongoDB Billing & Mini-ERP BOM) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Billing Card -->
+          <div class="rounded-xl border border-border bg-muted/20 p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">MongoDB Billing</span>
+              <span id="drawer-b-status" class="badge-secondary text-[9px]">ACTIVE</span>
             </div>
-            <div id="drawer-b-paid" class="text-sm font-bold text-white font-mono mt-1">Rp --</div>
-            <div id="drawer-b-sub" class="text-[10px] text-slate-400">Invoices: -- Paid / -- Unpaid</div>
-            <div id="drawer-b-due" class="text-[10px] text-slate-500">Next Due: --</div>
+            <div id="drawer-b-paid" class="text-xl font-bold font-mono text-foreground">Rp --</div>
+            <div id="drawer-b-sub" class="text-[11px] text-muted-foreground">Loading invoices...</div>
+            <div id="drawer-b-due" class="text-[10px] font-mono text-muted-foreground">Schedule: Standard</div>
           </div>
 
-          <!-- Mini-ERP Planned Hardware -->
-          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
-            <div class="text-[10px] font-mono text-emerald-400 font-bold uppercase tracking-wider flex items-center justify-between">
-              <span>Mini-ERP Planned Units</span>
-              <span id="drawer-erp-count" class="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-300">-- units</span>
+          <!-- Mini-ERP Card -->
+          <div class="rounded-xl border border-border bg-muted/20 p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mini-ERP BOM</span>
+              <div class="flex items-center gap-1.5">
+                <span id="drawer-erp-installed-badge" class="badge-default text-[9px]">-- Installed</span>
+                <span id="drawer-erp-takeout-badge" class="badge-destructive text-[9px]">-- Takeout</span>
+              </div>
             </div>
-            <div id="drawer-erp-models" class="text-xs font-semibold text-slate-200 mt-1 line-clamp-2">--</div>
-            <div id="drawer-erp-recon" class="text-[10px] text-slate-400">Telemetry Units: -- active</div>
-          </div>
-        </div>
-
-        <!-- Mini-ERP Hardware Inventory (Installed vs Takeout Breakdown) -->
-        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div class="flex items-center justify-between border-b border-slate-800/60 pb-2.5">
-            <div class="flex items-center gap-2">
-              <span class="text-sm">📋</span>
-              <span class="text-xs font-bold text-white">Mini-ERP Hardware Inventory</span>
-              <span class="text-[10px] text-slate-400 font-normal">(Installed vs Takeout)</span>
-            </div>
-            <div class="flex items-center gap-1.5" id="drawer-erp-badges">
-              <span id="drawer-erp-installed-badge" class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">-- Installed</span>
-              <span id="drawer-erp-takeout-badge" class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-rose-500/20 text-rose-400 border border-rose-500/30">-- Takeout</span>
-            </div>
-          </div>
-
-          <!-- Mini-ERP Devices List -->
-          <div id="drawer-erp-devices-list" class="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-            <!-- Injected via JS -->
+            <div id="drawer-erp-count" class="text-xl font-bold font-mono text-foreground">-- units planned</div>
+            <div id="drawer-erp-models" class="text-[11px] text-muted-foreground truncate">Loading BOM models...</div>
+            <div id="drawer-erp-recon" class="text-[10px] font-mono text-muted-foreground">Cross-referencing live telemetry...</div>
           </div>
         </div>
 
-        <!-- Maintenance Alert & Countdown Card -->
-        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <!-- Planned Mini-ERP Hardware List -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between border-b border-border pb-2">
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mini-ERP Planned Inventory</h4>
+            <span class="text-[11px] font-mono text-muted-foreground">Installed vs Takeouts</span>
+          </div>
+          <div id="drawer-erp-devices-list" class="space-y-2"></div>
+        </div>
+
+        <!-- Service & Maintenance Schedule -->
+        <div class="rounded-xl border border-border bg-muted/20 p-4 space-y-2">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-              <span>🛠️</span> Automated Maintenance Cycle (Mini-ERP)
-            </span>
-            <span id="drawer-maint-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">On Track</span>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Service Schedule</span>
+            <span id="drawer-maint-badge" class="badge-default text-[10px]">On Track</span>
           </div>
-
-          <div class="grid grid-cols-2 gap-3 text-xs">
-            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800">
-              <div class="text-slate-400">Next Service Target</div>
-              <div id="drawer-maint-date" class="font-mono text-sm font-bold text-white mt-0.5">--</div>
-              <div id="drawer-maint-type" class="text-[10px] text-slate-500 mt-0.5">Filter Cleaning</div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <div class="text-[10px] text-muted-foreground">Target Date:</div>
+              <div id="drawer-maint-date" class="font-mono font-semibold text-foreground">--</div>
             </div>
-            <div class="bg-slate-900 p-3 rounded-xl border border-slate-800">
-              <div class="text-slate-400">Last Service Completed</div>
-              <div id="drawer-last-service" class="font-mono text-sm font-bold text-white mt-0.5">--</div>
-              <div id="drawer-last-tech" class="text-[10px] text-slate-500 mt-0.5">Technician: --</div>
+            <div>
+              <div class="text-[10px] text-muted-foreground">Service Type:</div>
+              <div id="drawer-maint-type" class="font-medium text-foreground">--</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-muted-foreground">Last Serviced:</div>
+              <div id="drawer-last-service" class="font-mono text-foreground">--</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-muted-foreground">Assigned Tech:</div>
+              <div id="drawer-last-tech" class="text-muted-foreground">--</div>
             </div>
           </div>
         </div>
 
-        <!-- Room Telemetry, Firmware & Hardware Cards -->
-        <div>
-          <h3 class="text-sm font-bold text-white mb-3 flex items-center justify-between">
-            <span>Room Telemetry, Electrical Draw & Firmware Health</span>
-            <span id="drawer-device-count" class="text-xs text-slate-400 font-normal">-- devices</span>
-          </h3>
-          <div id="drawer-rooms-list" class="space-y-4">
-            <!-- Injected via JS -->
+        <!-- Live Transmitting Devices & Sensors -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between border-b border-border pb-2">
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Telemetry & Electrical Sensor Data</h4>
+            <span class="text-[11px] font-mono text-muted-foreground">Live Telemetry Feeds</span>
           </div>
+          <div id="drawer-rooms-list" class="space-y-4"></div>
         </div>
 
-        <!-- Maintenance History Log -->
-        <div>
-          <h3 class="text-sm font-bold text-white mb-3">Service & Fieldwork History</h3>
-          <div id="drawer-reports-list" class="space-y-2.5">
-            <!-- Injected via JS -->
+        <!-- Fieldwork Reports -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between border-b border-border pb-2">
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Fieldwork Reports</h4>
           </div>
+          <div id="drawer-reports-list" class="space-y-2"></div>
         </div>
 
       </div>
 
       <!-- Drawer Footer -->
-      <div class="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
-        <div class="text-xs text-slate-500 font-mono" id="drawer-loc-uuid">UUID: --</div>
-        <button onclick="copyClientSummary()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white">Copy Diagnostic Summary</button>
+      <div class="p-4 border-t border-border bg-muted/20 flex items-center justify-between">
+        <button onclick="copyClientSummary()" class="btn-replit-secondary text-xs">
+          <span>📋</span>
+          <span>Copy Diagnostic</span>
+        </button>
+        <button onclick="closeDrawer()" class="btn-replit-primary text-xs">
+          Done
+        </button>
       </div>
+
     </div>
   </div>
 
-  <script src="/static/app.js?v=1.5.2"></script>
+  <script src="/static/app.js?v=20260923c"></script>
 </body>
 </html>
