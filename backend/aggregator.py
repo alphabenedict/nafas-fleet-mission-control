@@ -59,6 +59,68 @@ def serialize_obj(obj: Any) -> Any:
         return [serialize_obj(i) for i in obj]
     return obj
 
+def get_client_timezone(country: Optional[str], city: Optional[str]) -> timezone:
+    c = (country or "").strip().lower()
+    ci = (city or "").strip().lower()
+    if "qatar" in c or "doha" in ci:
+        return timezone(timedelta(hours=3))  # UTC+3
+    elif "uae" in c or "emirates" in c or "dubai" in ci or "abu dhabi" in ci:
+        return timezone(timedelta(hours=4))  # UTC+4
+    elif "singapore" in c or "singapore" in ci or "bali" in ci or "makassar" in ci:
+        return timezone(timedelta(hours=8))  # UTC+8
+    else:
+        return timezone(timedelta(hours=7))  # UTC+7 (WIB / Bangkok / Hanoi)
+
+def get_operating_schedule(segment: Optional[str]) -> Dict[str, Any]:
+    seg = (segment or "").strip().lower()
+    if any(k in seg for k in ["office", "commercial office", "finance", "technology", "industrial", "research"]):
+        return {
+            "schedule_type": "OFFICE",
+            "schedule_label": "Mon–Fri 09:00–17:00 (40h/wk)",
+            "weekly_target_hours": 40,
+            "work_days": [0, 1, 2, 3, 4],  # Mon-Fri
+            "start_hour": 9,
+            "end_hour": 17
+        }
+    elif any(k in seg for k in ["education", "educational", "school"]):
+        return {
+            "schedule_type": "SCHOOL",
+            "schedule_label": "Mon–Fri 07:00–16:00 (45h/wk)",
+            "weekly_target_hours": 45,
+            "work_days": [0, 1, 2, 3, 4],  # Mon-Fri
+            "start_hour": 7,
+            "end_hour": 16
+        }
+    elif any(k in seg for k in ["retail", "commercial", "entertainment"]):
+        return {
+            "schedule_type": "COMMERCIAL",
+            "schedule_label": "Mon–Sat 10:00–21:00 (66h/wk)",
+            "weekly_target_hours": 66,
+            "work_days": [0, 1, 2, 3, 4, 5],  # Mon-Sat
+            "start_hour": 10,
+            "end_hour": 21
+        }
+    else:
+        # Residential, B2C, Healthcare, Hospitality, Recreational, Private
+        return {
+            "schedule_type": "24_7",
+            "schedule_label": "24/7 Continuous (168h/wk)",
+            "weekly_target_hours": 168,
+            "work_days": [0, 1, 2, 3, 4, 5, 6],
+            "start_hour": 0,
+            "end_hour": 24
+        }
+
+def check_is_operating_window(now_utc: datetime, tz_offset: timezone, sched: Dict[str, Any]) -> bool:
+    if sched.get("schedule_type") == "24_7":
+        return True
+    local_now = now_utc.astimezone(tz_offset)
+    weekday = local_now.weekday()  # 0=Monday, 6=Sunday
+    hour = local_now.hour + local_now.minute / 60.0
+    if weekday not in sched.get("work_days", []):
+        return False
+    return sched.get("start_hour", 0) <= hour < sched.get("end_hour", 24)
+
 class FleetAggregator:
     def __init__(self, cache_ttl: int = 900):
         self.cache_ttl = cache_ttl
@@ -517,6 +579,8 @@ class FleetAggregator:
             all_alerts = []
             total_active_devices = 0
             total_online_devices = 0
+            total_standby_devices = 0
+            total_fault_devices = 0
             total_fleet_kwh = 0.0
             overdue_services_count = 0
             critical_alerts_count = 0
@@ -687,20 +751,59 @@ class FleetAggregator:
                         if d.get("is_firmware_outdated"):
                             outdated_fw_count += 1
 
+                # Operating Schedule & Working Window (Schedule-Aware SLA)
+                client_tz = get_client_timezone(p.get("country"), p.get("city"))
+                sched = get_operating_schedule(p.get("segment"))
+                is_currently_operating = check_is_operating_window(datetime.now(timezone.utc), client_tz, sched)
+
                 # Calculate device stats (STRICTLY EXCLUDING Takeout devices from SLA)
                 active_loc_devs = [d for d in loc_devs if not d.get("is_takeout")]
                 takeout_loc_devs = [d for d in loc_devs if d.get("is_takeout")]
 
+                now_utc = datetime.now(timezone.utc)
+                for d in active_loc_devs:
+                    conn = d.get("connectivity")
+                    if conn == "online":
+                        d["operational_status"] = "online"
+                    else:
+                        if is_currently_operating:
+                            d["operational_status"] = "offline_fault"
+                        else:
+                            # Outside operating window: verify if normal night/weekend standby
+                            days_stale = 0.0
+                            if d.get("updated_at"):
+                                try:
+                                    up_dt = datetime.fromisoformat(str(d["updated_at"]).replace("Z", "+00:00"))
+                                    days_stale = (now_utc - up_dt).total_seconds() / 86400.0
+                                except Exception:
+                                    days_stale = 0.0
+                            if days_stale <= 3.5:
+                                d["operational_status"] = "standby_off_hours"
+                            else:
+                                d["operational_status"] = "offline_fault"
+
                 dev_count = len(active_loc_devs)
                 takeout_count = len(takeout_loc_devs)
                 online_count = sum(1 for d in active_loc_devs if d.get("connectivity") == "online")
+                standby_count = sum(1 for d in active_loc_devs if d.get("operational_status") == "standby_off_hours")
+                fault_count = sum(1 for d in active_loc_devs if d.get("operational_status") == "offline_fault")
                 offline_count = dev_count - online_count
-                uptime_pct = round((online_count / dev_count * 100.0), 1) if dev_count > 0 else 0.0
+
+                if dev_count > 0:
+                    if is_currently_operating:
+                        uptime_pct = round((online_count / dev_count * 100.0), 1)
+                    else:
+                        compliant_units = online_count + standby_count
+                        uptime_pct = round((compliant_units / dev_count * 100.0), 1)
+                else:
+                    uptime_pct = 0.0
 
                 if is_active_client:
                     total_fleet_kwh += project_kwh
                     total_active_devices += dev_count
                     total_online_devices += online_count
+                    total_standby_devices += standby_count
+                    total_fault_devices += fault_count
                     total_takeout_devices += takeout_count
 
                 # Calculate Maintenance Milestone / Cycle
@@ -762,7 +865,9 @@ class FleetAggregator:
                     "id": pid,
                     "project_name": p_name,
                     "client_name": c_name,
-                    "location_uuid": active_loc_uuid
+                    "location_uuid": active_loc_uuid,
+                    "is_in_operating_hours": is_currently_operating,
+                    "schedule_label": sched["schedule_label"]
                 }
                 project_alerts = AlertEngine.evaluate_device_alerts(
                     project_dict, room_map, billing_info=client_billing, minierp_devices=minierp_devs
@@ -795,7 +900,13 @@ class FleetAggregator:
                     "client_name": c_name,
                     "project_status": "lost" if is_lost_client else "active",
                     "client_type": p["client_type"] or "Residential",
-                    "segment": p["segment"] or "B2C",
+                    "segment": p["segment"] or "Residential",
+                    "schedule_type": sched["schedule_type"],
+                    "schedule_label": sched["schedule_label"],
+                    "weekly_target_hours": sched["weekly_target_hours"],
+                    "is_in_operating_hours": is_currently_operating,
+                    "standby_count": standby_count,
+                    "fault_count": fault_count,
                     "city": norm_city,
                     "country": norm_country,
                     "contract_type": p["contract_type"],
@@ -844,8 +955,9 @@ class FleetAggregator:
             active_clients = [c for c in processed_clients if c.get("project_status") == "active"]
             lost_clients = [c for c in processed_clients if c.get("project_status") == "lost"]
 
-            # Global Fleet SLA & KPIs
-            global_online_pct = round((total_online_devices / total_active_devices * 100.0), 1) if total_active_devices > 0 else 0.0
+            # Global Fleet SLA & KPIs (taking off-hours standby compliance into account)
+            compliant_devices_total = total_online_devices + total_standby_devices
+            global_online_pct = round((compliant_devices_total / total_active_devices * 100.0), 1) if total_active_devices > 0 else 0.0
 
             self.cached_summary = {
                 "total_clients": len(active_clients),
@@ -854,6 +966,8 @@ class FleetAggregator:
                 "total_records_count": len(processed_clients),
                 "total_active_devices": total_active_devices,
                 "total_online_devices": total_online_devices,
+                "total_standby_devices": total_standby_devices,
+                "total_fault_devices": total_fault_devices,
                 "total_offline_devices": total_active_devices - total_online_devices,
                 "total_takeout_devices": total_takeout_devices,
                 "global_uptime_pct": global_online_pct,

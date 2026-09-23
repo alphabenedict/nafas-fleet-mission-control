@@ -343,12 +343,15 @@ function renderKPIs() {
   let pendingCount = 0;
   let criticalAlertsCount = 0;
 
+  let totalStandby = 0;
+
   if (isAllCountries) {
     const s = fleetData.summary || {};
     activeCount = s.active_clients_count !== undefined ? s.active_clients_count : (s.total_clients || '--');
     lostCount = s.lost_clients_count !== undefined ? s.lost_clients_count : 0;
     totalDevices = s.total_active_devices !== undefined ? s.total_active_devices : '--';
     onlineDevices = s.total_online_devices || 0;
+    totalStandby = s.total_standby_devices || 0;
     offlineDevices = s.total_offline_devices || 0;
     uptimePct = s.global_uptime_pct || 0;
     totalKwh = s.total_fleet_kwh || 0;
@@ -368,8 +371,10 @@ function renderKPIs() {
 
     totalDevices = activeClients.reduce((acc, c) => acc + (c.device_count || 0), 0);
     onlineDevices = activeClients.reduce((acc, c) => acc + (c.online_count || 0), 0);
+    totalStandby = activeClients.reduce((acc, c) => acc + (c.standby_count || 0), 0);
     offlineDevices = Math.max(0, totalDevices - onlineDevices);
-    uptimePct = totalDevices > 0 ? Number(((onlineDevices / totalDevices) * 100).toFixed(1)) : 0;
+    const compliantDevices = onlineDevices + totalStandby;
+    uptimePct = totalDevices > 0 ? Number(((compliantDevices / totalDevices) * 100).toFixed(1)) : 0;
     totalKwh = activeClients.reduce((acc, c) => acc + (c.total_kwh || 0), 0);
 
     paidCount = activeClients.filter(c => c.billing_status === 'PAID').length;
@@ -420,10 +425,11 @@ function renderKPIs() {
 
   const uptimeSub = document.getElementById('kpi-uptime-sub');
   if (uptimeSub) {
+    const standbyText = totalStandby > 0 ? ` • ${totalStandby} standby` : '';
     if (isAllCountries) {
-      uptimeSub.innerText = `🌍 Global Target: >95.0% (${onlineDevices}/${totalDevices} online)`;
+      uptimeSub.innerText = `🌍 Global Target: >95.0% (${onlineDevices}/${totalDevices} online${standbyText})`;
     } else {
-      uptimeSub.innerText = `${flag} ${countryName} Target: >95.0% (${onlineDevices}/${totalDevices} online)`;
+      uptimeSub.innerText = `${flag} ${countryName} Target: >95.0% (${onlineDevices}/${totalDevices} online${standbyText})`;
     }
   }
 
@@ -942,8 +948,12 @@ function renderClientsTable() {
         </td>
         <td class="py-3 px-4">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-muted text-foreground border border-border">${escapeHtml(c.segment || 'B2C')}</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-muted text-foreground border border-border">${escapeHtml(c.segment || 'Residential')}</span>
             <span class="text-[10px] font-mono text-muted-foreground bg-background px-2 py-0.5 rounded-full border border-border">${getCountryFlag(c.country)} ${escapeHtml(c.country || 'Indonesia')}</span>
+          </div>
+          <div class="text-[10px] font-mono text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span class="text-[9px] px-1.5 py-0.5 rounded border border-border bg-[#101412] text-slate-300" title="Weekly Operating Target">🕒 ${escapeHtml(c.schedule_label || '24/7')}</span>
+            ${c.is_in_operating_hours ? '<span class="text-[9px] text-[#91C851] font-semibold">● Open</span>' : '<span class="text-[9px] text-slate-400 font-semibold">💤 Off-Hours</span>'}
           </div>
           <div class="text-[11px] text-muted-foreground mt-1 flex items-center gap-1"><span>📍</span> ${escapeHtml(c.city || 'Jakarta')}</div>
         </td>
@@ -951,10 +961,20 @@ function renderClientsTable() {
           ${billingBadge}
         </td>
         <td class="py-3 px-4 font-mono">
-          <div class="flex items-center gap-1.5 font-bold ${c.offline_count > 0 ? 'text-amber-500' : 'text-primary'}">
+          <div class="flex items-center gap-1.5 font-bold ${c.offline_count > 0 ? (c.fault_count > 0 ? 'text-amber-500' : 'text-slate-400') : 'text-primary'}">
             <span>${c.online_count}/${c.device_count}</span>
             <span class="text-[10px] font-normal text-muted-foreground">units</span>
           </div>
+          ${!c.is_in_operating_hours && c.standby_count > 0 ? `
+            <div class="text-[9px] text-slate-400 font-mono mt-0.5 flex items-center gap-1" title="Offline outside operating window (standby mode, compliant with SLA)">
+              <span>💤 ${c.standby_count} standby (off-hours)</span>
+            </div>
+          ` : ''}
+          ${!c.is_in_operating_hours && c.fault_count > 0 ? `
+            <div class="text-[9px] text-rose-400 font-mono mt-0.5 flex items-center gap-1" title="Offline >3.5 days (hardware fault / disconnected during working hours)">
+              <span>⚠️ ${c.fault_count} offline fault(s)</span>
+            </div>
+          ` : ''}
           ${c.takeout_count > 0 ? `
             <div class="text-[9px] text-amber-500 font-mono mt-0.5 flex items-center gap-1" title="Excluded from SLA uptime">
               <span>⚠️ ${c.takeout_count} takeout (excluded)</span>
@@ -1121,7 +1141,25 @@ function renderDrawerContent(data) {
   const billing = data.billing || {};
   const erpDevices = data.minierp_devices || [];
   const isLost = (c.project_status || '').toLowerCase() === 'lost';
+  const isOffHours = c.is_in_operating_hours === false;
+  const schedLabel = c.schedule_label || '24/7 Continuous (168h/wk)';
+  const schedBadge = document.getElementById('drawer-schedule-badge');
+  const windowBadge = document.getElementById('drawer-window-badge');
+  if (schedBadge) {
+    schedBadge.innerText = schedLabel;
+  }
+  if (windowBadge) {
+    if (isOffHours) {
+      windowBadge.className = 'brand-pill brand-pill-muted text-[10px]';
+      windowBadge.innerText = 'Off-Hours Standby 💤';
+    } else {
+      windowBadge.className = 'brand-pill brand-pill-success text-[10px]';
+      windowBadge.innerText = 'Operating Window 🟢';
+    }
+  }
 
+  const standbyNotice = c.standby_count > 0 ? ` • ${c.standby_count} Standby (Off-Hours)` : '';
+  const faultNotice = c.fault_count > 0 && isOffHours ? ` • ${c.fault_count} Offline Faults` : '';
   const takeoutNotice = c.takeout_count > 0 ? ` • ${c.takeout_count} Takeout (Excluded from SLA)` : '';
 
   if (isLost) {
@@ -1138,8 +1176,8 @@ function renderDrawerContent(data) {
     document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (Account Lost / Inactive)${takeoutNotice}`;
   } else {
     document.getElementById('drawer-client-name').innerText = c.client_name;
-    document.getElementById('drawer-project-sub').innerText = `Project ID: #${c.project_id} | ${c.project_name} | Contract: ${c.contract_type || 'Standard'}`;
-    document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (${c.uptime_pct}% SLA)${takeoutNotice}`;
+    document.getElementById('drawer-project-sub').innerText = `Project ID: #${c.project_id} | ${c.project_name} | Contract: ${c.contract_type || 'Standard'} • Target: ${c.weekly_target_hours || 168}h/wk`;
+    document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (${c.uptime_pct}% SLA)${standbyNotice}${faultNotice}${takeoutNotice}`;
   }
 
   document.getElementById('drawer-segment-badge').innerText = c.segment || 'B2C';
@@ -1347,6 +1385,7 @@ function renderDrawerContent(data) {
 function renderDeviceCard(d) {
   const isTakeout = d.is_takeout || d.erp_status === 'Takeout';
   const isOnline = d.connectivity === 'online';
+  const isStandby = d.operational_status === 'standby_off_hours';
   const isPurifier = d.category_code === 'airpure';
   const meas = d.measurement_current || {};
   const state = d.device_state || {};
@@ -1377,6 +1416,9 @@ function renderDeviceCard(d) {
   if (isTakeout) {
     statusBadge = `<span class="brand-pill brand-pill-muted font-mono" title="Excluded from SLA uptime calculations">Taken Out (Excluded)</span>`;
     cardBorder = 'border-slate-800/80 opacity-75 bg-[#171c19]/60';
+  } else if (isStandby) {
+    statusBadge = `<span class="brand-pill brand-pill-muted font-mono text-slate-300 bg-slate-800/80 border border-slate-700" title="Device is powered down outside operating hours (normal off-hours standby)">💤 Standby (Off-Hours)</span>`;
+    cardBorder = 'border-slate-700/60 bg-[#141916]';
   } else {
     statusBadge = `<span class="brand-pill ${isOnline ? 'brand-pill-success' : 'brand-pill-critical'} font-mono">${d.connectivity || 'offline'}</span>`;
     cardBorder = isOnline ? 'border-[#29342c] bg-[#171c19]' : 'border-rose-900/40 bg-[#171c19]';

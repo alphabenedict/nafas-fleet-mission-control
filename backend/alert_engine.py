@@ -25,9 +25,11 @@ class AlertEngine:
         all_active_devices = [d for d in all_devices if d.get("erp_status") != "Takeout" and not d.get("is_takeout")]
 
         # 1. Rule: Blackout Warning (100% active devices offline at site with >= 2 active devices)
+        # Suppress blackout warnings during off-hours (e.g. offices/schools closed at night or weekends)
+        is_operating_window = project.get("is_in_operating_hours", True)
         total_devs = len(all_active_devices)
         offline_devs = [d for d in all_active_devices if d.get("connectivity") == "offline"]
-        if total_devs >= 2 and len(offline_devs) == total_devs:
+        if is_operating_window and total_devs >= 2 and len(offline_devs) == total_devs:
             alerts.append({
                 "severity": "WARNING",
                 "type": "SITE_BLACKOUT",
@@ -49,6 +51,8 @@ class AlertEngine:
             has_online_monitor = any(m.get("connectivity") == "online" for m in monitors)
             
             for p in purifiers:
+                if p.get("operational_status") == "standby_off_hours":
+                    continue
                 if p.get("connectivity") == "offline" and has_online_monitor:
                     alerts.append({
                         "severity": "CRITICAL",
