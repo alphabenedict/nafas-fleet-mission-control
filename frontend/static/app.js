@@ -345,7 +345,11 @@ function renderKPIs() {
 
   const dSub = document.getElementById('kpi-device-sub');
   if (dSub) {
-    dSub.innerText = `${onlineDevices} Online / ${offlineDevices} Offline`;
+    const takeoutTotal = isAllCountries 
+      ? (fleetData.summary?.total_takeout_devices || 0)
+      : activeClients.reduce((acc, c) => acc + (c.takeout_count || 0), 0);
+    const takeoutNotice = takeoutTotal > 0 ? ` • ${takeoutTotal} Takeout Excluded` : '';
+    dSub.innerText = `${onlineDevices} Online / ${offlineDevices} Offline${takeoutNotice}`;
   }
   
   // 3. Fleet Uptime (SLA) Card
@@ -899,13 +903,17 @@ function renderClientsTable() {
             <span>${c.online_count}/${c.device_count}</span>
             <span class="text-[10px] font-normal text-muted-foreground">units</span>
           </div>
-          ${c.minierp_planned_count ? `
+          ${c.takeout_count > 0 ? `
+            <div class="text-[9px] text-amber-500 font-mono mt-0.5 flex items-center gap-1" title="Excluded from SLA uptime">
+              <span>⚠️ ${c.takeout_count} takeout (excluded)</span>
+            </div>
+          ` : (c.minierp_planned_count ? `
             <div class="text-[9px] text-muted-foreground flex items-center gap-1 mt-0.5">
               <span>ERP:</span>
               <span class="text-primary font-semibold">${c.minierp_installed_count !== undefined ? c.minierp_installed_count : c.minierp_planned_count} inst</span>
               ${c.minierp_takeout_count ? `<span class="text-destructive font-semibold">/ ${c.minierp_takeout_count} out</span>` : ''}
             </div>
-          ` : ''}
+          ` : '')}
         </td>
         <td class="py-3 px-4">
           <span class="${slaBadge} font-mono">
@@ -1062,6 +1070,8 @@ function renderDrawerContent(data) {
   const erpDevices = data.minierp_devices || [];
   const isLost = (c.project_status || '').toLowerCase() === 'lost';
 
+  const takeoutNotice = c.takeout_count > 0 ? ` • ${c.takeout_count} Takeout (Excluded from SLA)` : '';
+
   if (isLost) {
     document.getElementById('drawer-client-name').innerHTML = `
       <div class="flex items-center gap-2">
@@ -1073,11 +1083,11 @@ function renderDrawerContent(data) {
       <span>Project ID: #${c.project_id} | ${escapeHtml(c.project_name)}</span>
       ${c.end_date ? `<span class="text-rose-400 font-mono ml-2 font-semibold">• Contract Ended: ${escapeHtml(c.end_date)}</span>` : ''}
     `;
-    document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (Account Lost / Inactive)`;
+    document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (Account Lost / Inactive)${takeoutNotice}`;
   } else {
     document.getElementById('drawer-client-name').innerText = c.client_name;
     document.getElementById('drawer-project-sub').innerText = `Project ID: #${c.project_id} | ${c.project_name} | Contract: ${c.contract_type || 'Standard'}`;
-    document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (${c.uptime_pct}% SLA)`;
+    document.getElementById('drawer-device-count').innerText = `${c.online_count}/${c.device_count} Units Online (${c.uptime_pct}% SLA)${takeoutNotice}`;
   }
 
   document.getElementById('drawer-segment-badge').innerText = c.segment || 'B2C';
@@ -1131,7 +1141,9 @@ function renderDrawerContent(data) {
   document.getElementById('drawer-erp-models').innerText = modelEntries.length > 0 
     ? modelEntries.map(([m, qty]) => `${qty}x ${m}`).join(', ')
     : 'No explicit BOM models registered';
-  document.getElementById('drawer-erp-recon').innerText = `Live MySQL Telemetry: ${c.device_count} units (${c.online_count} active)`;
+  document.getElementById('drawer-erp-recon').innerText = c.takeout_count > 0
+    ? `Live MySQL Telemetry: ${c.device_count} active installed (${c.online_count} online) • ${c.takeout_count} taken out (excluded from SLA)`
+    : `Live MySQL Telemetry: ${c.device_count} units (${c.online_count} active)`;
 
   // Mini-ERP Hardware Inventory (Installed vs Takeout Breakdown)
   const installedCount = c.minierp_installed_count !== undefined 
@@ -1281,6 +1293,7 @@ function renderDrawerContent(data) {
 }
 
 function renderDeviceCard(d) {
+  const isTakeout = d.is_takeout || d.erp_status === 'Takeout';
   const isOnline = d.connectivity === 'online';
   const isPurifier = d.category_code === 'airpure';
   const meas = d.measurement_current || {};
@@ -1297,8 +1310,8 @@ function renderDeviceCard(d) {
 
   // Mini-ERP status tag
   let erpTag = '';
-  if (d.erp_status === 'Takeout') {
-    erpTag = `<span class="brand-pill brand-pill-critical animate-pulse font-mono" title="Flagged as TAKEOUT in Mini-ERP!">⚠️ ERP: Takeout</span>`;
+  if (isTakeout) {
+    erpTag = `<span class="brand-pill brand-pill-critical font-mono" title="Flagged as TAKEOUT in Mini-ERP — Excluded from Uptime SLA">⚠️ Taken Out (Excluded)</span>`;
   } else if (d.erp_status === 'Installed') {
     erpTag = `<span class="brand-pill brand-pill-success font-mono">✓ ERP: Installed</span>`;
   } else if (d.erp_status === 'Spare') {
@@ -1307,8 +1320,18 @@ function renderDeviceCard(d) {
     erpTag = `<span class="brand-pill brand-pill-muted font-mono">ERP: Unregistered</span>`;
   }
 
+  let statusBadge = '';
+  let cardBorder = '';
+  if (isTakeout) {
+    statusBadge = `<span class="brand-pill brand-pill-muted font-mono" title="Excluded from SLA uptime calculations">Taken Out (Excluded)</span>`;
+    cardBorder = 'border-slate-800/80 opacity-75 bg-[#171c19]/60';
+  } else {
+    statusBadge = `<span class="brand-pill ${isOnline ? 'brand-pill-success' : 'brand-pill-critical'} font-mono">${d.connectivity || 'offline'}</span>`;
+    cardBorder = isOnline ? 'border-[#29342c] bg-[#171c19]' : 'border-rose-900/40 bg-[#171c19]';
+  }
+
   return `
-    <div class="bg-[#171c19] border ${isOnline ? 'border-[#29342c]' : 'border-rose-900/40'} rounded-xl p-3 flex flex-col justify-between space-y-2.5">
+    <div class="${cardBorder} rounded-xl p-3 flex flex-col justify-between space-y-2.5">
       <div>
         <div class="flex items-start justify-between">
           <div>
@@ -1318,9 +1341,7 @@ function renderDeviceCard(d) {
             </div>
             <div class="text-[10px] font-mono text-[#A5B3A8] mt-0.5">${escapeHtml(d.vendor_device_id || d.device_type)}</div>
           </div>
-          <span class="brand-pill ${isOnline ? 'brand-pill-success' : 'brand-pill-critical'} font-mono">
-            ${d.connectivity || 'offline'}
-          </span>
+          ${statusBadge}
         </div>
 
         <div class="flex flex-wrap items-center gap-1 mt-1.5">
@@ -1354,11 +1375,12 @@ function copyClientSummary() {
   if (!fleetData.selectedClient) return;
   const c = fleetData.selectedClient.client_info;
   const b = fleetData.selectedClient.billing || {};
+  const takeoutInfo = c.takeout_count > 0 ? ` (${c.takeout_count} Taken Out - Excluded from SLA)` : '';
   const summary = `Nafas CAZ Fleet Diagnostic:
 Client: ${c.client_name} (${c.project_name})
 City: ${c.city}, ${c.country}
 Billing Status: ${c.billing_status} (Paid: Rp ${Math.round(b.total_paid_amount || 0).toLocaleString('id-ID')})
-Devices: ${c.online_count}/${c.device_count} Online (${c.uptime_pct}% SLA)
+Devices: ${c.online_count}/${c.device_count} Active Online (${c.uptime_pct}% SLA)${takeoutInfo}
 Total Power: ${c.total_kwh} kWh
 Next Maintenance: ${c.maint_target_date || 'N/A'} (${c.maint_type})
 Status: ${c.maint_status}`;

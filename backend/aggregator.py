@@ -510,6 +510,7 @@ class FleetAggregator:
             paid_clients_count = 0
             unpaid_clients_count = 0
             pending_clients_count = 0
+            total_takeout_devices = 0
 
             today = date.today()
 
@@ -590,6 +591,75 @@ class FleetAggregator:
                     elif b_status == "PAYMENT_PENDING":
                         pending_clients_count += 1
 
+                # Build lookup of live MySQL devices for cross-referencing
+                mysql_dev_lookup = {
+                    (d.get("device_name") or "").strip().lower(): d 
+                    for d in loc_devs
+                }
+
+                # Annotate Mini-ERP devices with Installed / Takeout status and live telemetry
+                annotated_minierp_devs = []
+                erp_installed_count = 0
+                erp_takeout_count = 0
+                erp_spare_count = 0
+
+                for ed in minierp_devs:
+                    ed_dict = dict(ed)
+                    if ed_dict.get("installed_date"):
+                        ed_dict["installed_date"] = str(ed_dict["installed_date"])
+                    if ed_dict.get("takeout_date"):
+                        ed_dict["takeout_date"] = str(ed_dict["takeout_date"])
+
+                    ed_status = (ed_dict.get("device_status") or "Installed").strip()
+                    ed_status_lower = ed_status.lower()
+                    if "takeout" in ed_status_lower:
+                        erp_takeout_count += 1
+                        ed_dict["normalized_status"] = "Takeout"
+                    elif "spare" in ed_status_lower:
+                        erp_spare_count += 1
+                        ed_dict["normalized_status"] = "Spare"
+                    else:
+                        erp_installed_count += 1
+                        ed_dict["normalized_status"] = "Installed"
+
+                    ed_name = (ed_dict.get("device_id") or "").strip()
+                    m_match = mysql_dev_lookup.get(ed_name.lower()) if ed_name else None
+                    if m_match:
+                        ed_dict["in_telemetry"] = True
+                        ed_dict["connectivity"] = m_match.get("connectivity") or "offline"
+                        ed_dict["mysql_status"] = m_match.get("status")
+                        ed_dict["telemetry_data"] = {
+                            "power_kwh": m_match.get("total_powerconsumption"),
+                            "firmware": m_match.get("device_firmware"),
+                            "is_outdated_fw": m_match.get("is_firmware_outdated"),
+                            "measurements": m_match.get("measurement_current")
+                        }
+                    else:
+                        ed_dict["in_telemetry"] = False
+                        ed_dict["connectivity"] = "unlinked"
+                        ed_dict["mysql_status"] = None
+                        ed_dict["telemetry_data"] = None
+
+                    annotated_minierp_devs.append(ed_dict)
+
+                # Cross-reference live MySQL devices with ERP status
+                erp_dev_lookup = {
+                    (ed.get("device_id") or "").strip().lower(): ed
+                    for ed in annotated_minierp_devs if ed.get("device_id")
+                }
+                for d in loc_devs:
+                    d_clean = (d.get("device_name") or "").strip().lower()
+                    matched_erp = erp_dev_lookup.get(d_clean)
+                    if matched_erp:
+                        d["erp_status"] = matched_erp.get("normalized_status")
+                        d["is_takeout"] = (d["erp_status"] == "Takeout")
+                        d["erp_installed_date"] = str(matched_erp.get("installed_date")) if matched_erp.get("installed_date") else None
+                        d["erp_takeout_date"] = str(matched_erp.get("takeout_date")) if matched_erp.get("takeout_date") else None
+                        d["erp_notes"] = matched_erp.get("notes")
+                    else:
+                        d["erp_status"] = "Unregistered"
+                        d["is_takeout"] = False
+
                 # Group devices by room
                 room_map = {}
                 project_kwh = 0.0
@@ -599,22 +669,26 @@ class FleetAggregator:
                     if r_name not in room_map:
                         room_map[r_name] = []
                     room_map[r_name].append(d)
-                    project_kwh += float(d.get("total_powerconsumption") or 0.0)
-                    if d.get("is_firmware_outdated"):
-                        outdated_fw_count += 1
+                    if not d.get("is_takeout"):
+                        project_kwh += float(d.get("total_powerconsumption") or 0.0)
+                        if d.get("is_firmware_outdated"):
+                            outdated_fw_count += 1
 
-                if is_active_client:
-                    total_fleet_kwh += project_kwh
+                # Calculate device stats (STRICTLY EXCLUDING Takeout devices from SLA)
+                active_loc_devs = [d for d in loc_devs if not d.get("is_takeout")]
+                takeout_loc_devs = [d for d in loc_devs if d.get("is_takeout")]
 
-                # Calculate device stats
-                dev_count = len(loc_devs)
-                online_count = sum(1 for d in loc_devs if d.get("connectivity") == "online")
+                dev_count = len(active_loc_devs)
+                takeout_count = len(takeout_loc_devs)
+                online_count = sum(1 for d in active_loc_devs if d.get("connectivity") == "online")
                 offline_count = dev_count - online_count
                 uptime_pct = round((online_count / dev_count * 100.0), 1) if dev_count > 0 else 0.0
 
                 if is_active_client:
+                    total_fleet_kwh += project_kwh
                     total_active_devices += dev_count
                     total_online_devices += online_count
+                    total_takeout_devices += takeout_count
 
                 # Calculate Maintenance Milestone / Cycle
                 p_milestones = milestones_by_project.get(pid, [])
@@ -693,73 +767,6 @@ class FleetAggregator:
                     m_label = md.get("device_item_type") or md.get("device_type") or "Unit"
                     minierp_models[m_label] = minierp_models.get(m_label, 0) + 1
 
-                # Build lookup of live MySQL devices for cross-referencing
-                mysql_dev_lookup = {
-                    (d.get("device_name") or "").strip().lower(): d 
-                    for d in loc_devs
-                }
-
-                # Annotate Mini-ERP devices with Installed / Takeout status and live telemetry
-                annotated_minierp_devs = []
-                erp_installed_count = 0
-                erp_takeout_count = 0
-                erp_spare_count = 0
-
-                for ed in minierp_devs:
-                    ed_dict = dict(ed)
-                    if ed_dict.get("installed_date"):
-                        ed_dict["installed_date"] = str(ed_dict["installed_date"])
-                    if ed_dict.get("takeout_date"):
-                        ed_dict["takeout_date"] = str(ed_dict["takeout_date"])
-
-                    ed_status = (ed_dict.get("device_status") or "Installed").strip()
-                    ed_status_lower = ed_status.lower()
-                    if "takeout" in ed_status_lower:
-                        erp_takeout_count += 1
-                        ed_dict["normalized_status"] = "Takeout"
-                    elif "spare" in ed_status_lower:
-                        erp_spare_count += 1
-                        ed_dict["normalized_status"] = "Spare"
-                    else:
-                        erp_installed_count += 1
-                        ed_dict["normalized_status"] = "Installed"
-
-                    ed_name = (ed_dict.get("device_id") or "").strip()
-                    m_match = mysql_dev_lookup.get(ed_name.lower()) if ed_name else None
-                    if m_match:
-                        ed_dict["in_telemetry"] = True
-                        ed_dict["connectivity"] = m_match.get("connectivity") or "offline"
-                        ed_dict["mysql_status"] = m_match.get("status")
-                        ed_dict["telemetry_data"] = {
-                            "power_kwh": m_match.get("total_powerconsumption"),
-                            "firmware": m_match.get("device_firmware"),
-                            "is_outdated_fw": m_match.get("is_firmware_outdated"),
-                            "measurements": m_match.get("measurement_current")
-                        }
-                    else:
-                        ed_dict["in_telemetry"] = False
-                        ed_dict["connectivity"] = "unlinked"
-                        ed_dict["mysql_status"] = None
-                        ed_dict["telemetry_data"] = None
-
-                    annotated_minierp_devs.append(ed_dict)
-
-                # Cross-reference live MySQL devices with ERP status
-                erp_dev_lookup = {
-                    (ed.get("device_id") or "").strip().lower(): ed
-                    for ed in annotated_minierp_devs if ed.get("device_id")
-                }
-                for d in loc_devs:
-                    d_clean = (d.get("device_name") or "").strip().lower()
-                    matched_erp = erp_dev_lookup.get(d_clean)
-                    if matched_erp:
-                        d["erp_status"] = matched_erp.get("normalized_status")
-                        d["erp_installed_date"] = str(matched_erp.get("installed_date")) if matched_erp.get("installed_date") else None
-                        d["erp_takeout_date"] = str(matched_erp.get("takeout_date")) if matched_erp.get("takeout_date") else None
-                        d["erp_notes"] = matched_erp.get("notes")
-                    else:
-                        d["erp_status"] = "Unregistered"
-
                 raw_country = (p["country"] or "Indonesia").strip()
                 raw_city = (p["city"] or "").strip()
                 if raw_country.lower() == "cilegon":
@@ -786,6 +793,7 @@ class FleetAggregator:
                     "is_location_reconciled": is_reconciled,
                     "reconciled_location_name": matched_loc_name,
                     "device_count": dev_count,
+                    "takeout_count": takeout_count,
                     "online_count": online_count,
                     "offline_count": offline_count,
                     "uptime_pct": uptime_pct,
@@ -834,6 +842,7 @@ class FleetAggregator:
                 "total_active_devices": total_active_devices,
                 "total_online_devices": total_online_devices,
                 "total_offline_devices": total_active_devices - total_online_devices,
+                "total_takeout_devices": total_takeout_devices,
                 "global_uptime_pct": global_online_pct,
                 "total_fleet_kwh": round(total_fleet_kwh, 1),
                 "paid_clients_count": paid_clients_count,

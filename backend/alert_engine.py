@@ -21,15 +21,18 @@ class AlertEngine:
         for dev_list in room_devices.values():
             all_devices.extend(dev_list)
 
-        # 1. Rule: Blackout Warning (100% devices offline at site with >= 2 devices)
-        total_devs = len(all_devices)
-        offline_devs = [d for d in all_devices if d.get("connectivity") == "offline"]
+        # Exclude decommissioned/taken out devices from alert generation
+        all_active_devices = [d for d in all_devices if d.get("erp_status") != "Takeout" and not d.get("is_takeout")]
+
+        # 1. Rule: Blackout Warning (100% active devices offline at site with >= 2 active devices)
+        total_devs = len(all_active_devices)
+        offline_devs = [d for d in all_active_devices if d.get("connectivity") == "offline"]
         if total_devs >= 2 and len(offline_devs) == total_devs:
             alerts.append({
                 "severity": "WARNING",
                 "type": "SITE_BLACKOUT",
                 "title": "Apartment / Site Wide Blackout",
-                "message": f"All {total_devs} devices at this location are offline simultaneously (potential power shutoff or resident travel).",
+                "message": f"All {total_devs} active devices at this location are offline simultaneously (potential power shutoff or resident travel).",
                 "project_id": project.get("id"),
                 "project_name": project.get("project_name"),
                 "client_name": project.get("client_name"),
@@ -39,8 +42,9 @@ class AlertEngine:
 
         # 2. Rule: Silent Dropout (Purifier offline while monitor in same room is online)
         for room_name, devs in room_devices.items():
-            monitors = [d for d in devs if d.get("category_code") == "airmon"]
-            purifiers = [d for d in devs if d.get("category_code") == "airpure"]
+            active_devs = [d for d in devs if d.get("erp_status") != "Takeout" and not d.get("is_takeout")]
+            monitors = [d for d in active_devs if d.get("category_code") == "airmon"]
+            purifiers = [d for d in active_devs if d.get("category_code") == "airpure"]
             
             has_online_monitor = any(m.get("connectivity") == "online" for m in monitors)
             
