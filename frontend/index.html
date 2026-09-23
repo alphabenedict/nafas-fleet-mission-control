@@ -288,11 +288,11 @@
         <!-- Fleet Uptime -->
         <div class="rounded-xl border border-border bg-card p-5 shadow-xs transition-all hover:border-primary/40">
           <div class="flex items-center justify-between text-sm font-medium text-muted-foreground">
-            <span>Fleet Uptime (SLA)</span>
+            <span id="kpi-uptime-title">Fleet Uptime (SLA)</span>
             <span class="text-xs text-primary font-bold">↗</span>
           </div>
           <p id="kpi-uptime" class="text-2xl font-bold font-mono text-primary mt-2">--%</p>
-          <p class="mt-1 text-xs text-muted-foreground">Target: &gt;95.0%</p>
+          <p id="kpi-uptime-sub" class="mt-1 text-xs text-muted-foreground">Target: &gt;95.0%</p>
         </div>
 
         <!-- Cumulative Energy -->
@@ -302,7 +302,7 @@
             <span class="text-xs">⚡</span>
           </div>
           <p id="kpi-kwh" class="text-2xl font-bold font-mono text-[#2DD4BF] mt-2">-- kWh</p>
-          <p class="mt-1 text-xs text-muted-foreground">Cumulative Telemetry kWh</p>
+          <p id="kpi-kwh-sub" class="mt-1 text-xs text-muted-foreground">Cumulative Telemetry kWh</p>
         </div>
       </div>
 
@@ -556,6 +556,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20260923c"></script>
+  <script src="/static/app.js?v=20260923g"></script>
 </body>
 </html>

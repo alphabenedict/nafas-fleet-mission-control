@@ -37,7 +37,7 @@ def get_mysql_connection():
         database=MYSQL_DB,
         cursorclass=pymysql.cursors.DictCursor,
         connect_timeout=30,
-        read_timeout=90,
+        read_timeout=120,
         write_timeout=30
     )
 

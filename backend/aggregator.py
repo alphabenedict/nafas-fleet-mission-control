@@ -33,7 +33,7 @@ SINGLE_TOKEN_WHITELIST = {
     'rtv', 'rohan', 'monga', 'ratna', 'kartadjoemena', 'rowdy', 'rowdybox',
     'kemenkoinfra', 'injourney', 'soulbox', 'dandelion', 'danantara',
     'danapensiun', 'bodyform', 'neutradc', 'sana', 'wellington', 'kanmo',
-    'ecocare', 'tripledot', 'pamerindo', 'tiq', 'ishine', 'acv'
+    'ecocare', 'tripledot', 'pamerindo', 'tiq', 'ishine', 'acv', 'convivium'
 }
 
 def tokenize_name(text: str) -> set:
@@ -193,12 +193,8 @@ class FleetAggregator:
                     "status": 1,
                     "invoice_due_date": 1,
                     "paid_amount": 1,
-                    "paid_at": 1,
-                    "client": 1,
-                    "pic": 1,
-                    "subscription_uuid": 1,
-                    "account_uuid": 1,
-                    "items": 1
+                    "client.name": 1,
+                    "pic.name": 1
                 }))
                 m_client.close()
 
@@ -290,7 +286,6 @@ class FleetAggregator:
             # 3.0 Mini-ERP Benchmark Resolution:
             # Map registered hardware serials from Mini-ERP to their true MySQL location_uuid
             erp_benchmark_devices = {}
-            all_benchmark_names = []
             erp_device_room_map = {}
             for d in raw_minierp_devices:
                 pid = d["project_id"]
@@ -303,34 +298,29 @@ class FleetAggregator:
                     if pid not in erp_benchmark_devices:
                         erp_benchmark_devices[pid] = []
                     if len(erp_benchmark_devices[pid]) < 5:
-                        erp_benchmark_devices[pid].append(d_id)
-                        all_benchmark_names.append(d_id)
+                        erp_benchmark_devices[pid].append(clean_did)
 
             dev_to_mysql_loc = {}
-            unique_b_names = list(set(all_benchmark_names))
-            if unique_b_names:
-                try:
-                    m_conn = get_mysql_connection()
-                    with m_conn.cursor() as cursor:
-                        for i in range(0, len(unique_b_names), 500):
-                            chunk = unique_b_names[i:i+500]
-                            cursor.execute("""
-                                SELECT device_name, location_uuid
-                                FROM nafas_mydevice.tb_mydevice
-                                WHERE is_deleted = 0 AND device_name IN %s;
-                            """, (tuple(chunk),))
-                            for r in cursor.fetchall():
-                                if r.get("location_uuid"):
-                                    dev_to_mysql_loc[r["device_name"].lower()] = r["location_uuid"]
-                    m_conn.close()
-                    logger.info(f"Mini-ERP Benchmark: resolved {len(dev_to_mysql_loc)} device serials to live MySQL locations.")
-                except Exception as e:
-                    logger.warning(f"Error resolving benchmark devices to MySQL locations: {e}")
+            try:
+                m_conn = get_mysql_connection()
+                with m_conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT LOWER(device_name) as device_name, location_uuid
+                        FROM nafas_mydevice.tb_mydevice
+                        WHERE is_deleted = 0 AND device_name IS NOT NULL AND device_name != '';
+                    """)
+                    for r in cursor.fetchall():
+                        if r.get("location_uuid") and r.get("device_name"):
+                            dev_to_mysql_loc[r["device_name"]] = r["location_uuid"]
+                m_conn.close()
+                logger.info(f"Mini-ERP Benchmark: loaded {len(dev_to_mysql_loc)} device serial mappings in single fast query.")
+            except Exception as e:
+                logger.warning(f"Error loading device serial mappings from MySQL: {e}")
 
             project_erp_hardware_loc = {}
             for pid, d_list in erp_benchmark_devices.items():
                 for d_name in d_list:
-                    loc = dev_to_mysql_loc.get(d_name.lower())
+                    loc = dev_to_mysql_loc.get(d_name)
                     if loc:
                         project_erp_hardware_loc[pid] = loc
                         break
@@ -410,36 +400,52 @@ class FleetAggregator:
             raw_devices = []
             rooms_by_uuid = {}
             if loc_uuids:
-                try:
-                    m_conn = get_mysql_connection()
-                    with m_conn.cursor() as cursor:
-                        # Chunk in batches of 50 to avoid overly long SQL statements
-                        chunk_size = 50
-                        chunks = [loc_uuids[i:i + chunk_size] for i in range(0, len(loc_uuids), chunk_size)]
-                        for chunk in chunks:
-                            cursor.execute("""
-                                SELECT uuid, location_uuid, room_name
-                                FROM nafas_mydevice.tb_role_room
-                                WHERE location_uuid IN %s;
-                            """, (tuple(chunk),))
-                            for rm in cursor.fetchall():
-                                rooms_by_uuid[rm["uuid"]] = rm["room_name"]
+                max_retries = 2
+                for attempt in range(max_retries):
+                    try:
+                        m_conn = get_mysql_connection()
+                        with m_conn.cursor() as cursor:
+                            # Batch rooms in safe chunks of 60 locations
+                            chunk_size = 60
+                            chunks = [loc_uuids[i:i + chunk_size] for i in range(0, len(loc_uuids), chunk_size)]
+                            for chunk in chunks:
+                                cursor.execute("""
+                                    SELECT uuid, location_uuid, room_name
+                                    FROM nafas_mydevice.tb_role_room
+                                    WHERE location_uuid IN %s;
+                                """, (tuple(chunk),))
+                                for rm in cursor.fetchall():
+                                    rooms_by_uuid[rm["uuid"]] = rm["room_name"]
 
-                            cursor.execute("""
-                                SELECT id, uuid, vendor_device_id, device_name, device_type,
-                                       category_code, status, connectivity, location_uuid,
-                                       room_uuid, device_firmware, device_series, total_powerconsumption,
-                                       speed, mode, activation_date,
-                                       device_state, measurement_current, updated_at
-                                FROM nafas_mydevice.tb_mydevice
-                                WHERE is_deleted = 0 AND status = 'activated' AND location_uuid IN %s;
-                            """, (tuple(chunk),))
-                            devs = cursor.fetchall()
-                            raw_devices.extend(devs)
-                    m_conn.close()
-                    logger.info(f"MySQL devices fetch completed: {len(raw_devices)} active IoT devices loaded across {len(loc_uuids)} target locations.")
-                except Exception as e:
-                    logger.error(f"Error fetching MySQL rooms and devices: {e}", exc_info=True)
+                            # Batch devices with lightweight JSON_EXTRACT for filter_life (prevents Azure VPN socket timeout on large blobs)
+                            for chunk in chunks:
+                                cursor.execute("""
+                                    SELECT id, uuid, vendor_device_id, device_name, device_type,
+                                           category_code, status, connectivity, location_uuid,
+                                           room_uuid, device_firmware, device_series, total_powerconsumption,
+                                           speed, mode, activation_date,
+                                           JSON_EXTRACT(device_state, '$.filter.life') as filter_life,
+                                           measurement_current, updated_at
+                                    FROM nafas_mydevice.tb_mydevice
+                                    WHERE is_deleted = 0 AND status = 'activated' AND location_uuid IN %s;
+                                """, (tuple(chunk),))
+                                devs = cursor.fetchall()
+                                raw_devices.extend(devs)
+                        m_conn.close()
+                        logger.info(f"MySQL devices fetch completed: {len(raw_devices)} active IoT devices loaded across {len(loc_uuids)} target locations.")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Attempt {attempt + 1}/{max_retries} fetching MySQL rooms and devices: {e}")
+                        if attempt == max_retries - 1:
+                            logger.error(f"Error fetching MySQL rooms and devices after {max_retries} attempts: {e}", exc_info=True)
+                        time.sleep(1.0)
+
+            # CRITICAL SAFETY GUARD: If raw_devices returned 0 but target locations exist, DO NOT wipe existing cache!
+            if len(raw_devices) == 0 and len(loc_uuids) > 0:
+                logger.error("CRITICAL: MySQL devices fetch returned 0 devices despite target locations being present! Aborting refresh to avoid telemetry blackout.")
+                if self.cached_clients:
+                    logger.info("Preserving existing cached clients and devices.")
+                raise RuntimeError("MySQL devices fetch returned 0 devices. Aborting refresh to protect cache.")
 
             # Index MySQL devices by location_uuid
             devices_by_loc = {}
@@ -454,8 +460,15 @@ class FleetAggregator:
                     erp_rm = erp_device_room_map.get(d_name_clean)
                     dev_dict["room_name"] = rooms_by_uuid.get(dev["room_uuid"]) or erp_rm or "Main Room"
                     
-                    # Convert power consumption
-                    dev_dict["total_powerconsumption"] = float(dev_dict.get("total_powerconsumption") or 0.0)
+                    # Convert power consumption with scale normalization
+                    raw_p = float(dev_dict.get("total_powerconsumption") or 0.0)
+                    if raw_p > 50000000:
+                        norm_p = raw_p / 1000000.0  # mWh to kWh
+                    elif raw_p > 50000:
+                        norm_p = raw_p / 1000.0     # Wh to kWh
+                    else:
+                        norm_p = raw_p
+                    dev_dict["total_powerconsumption"] = round(norm_p, 2)
 
                     # Determine firmware health
                     d_type = (dev_dict.get("device_type") or "").lower()
@@ -464,15 +477,24 @@ class FleetAggregator:
                     dev_dict["latest_firmware"] = latest_fw
                     dev_dict["is_firmware_outdated"] = (d_fw != latest_fw) if (d_fw and latest_fw) else False
                     
-                    for field in ["device_state", "measurement_current"]:
-                        val = dev_dict.get(field)
-                        if isinstance(val, str):
-                            try:
-                                dev_dict[field] = json.loads(val)
-                            except Exception:
-                                dev_dict[field] = {}
-                        elif val is None:
-                            dev_dict[field] = {}
+                    # Construct lightweight device_state from extracted filter_life
+                    f_life = dev_dict.get("filter_life")
+                    if f_life is not None:
+                        try:
+                            dev_dict["device_state"] = {"filter": {"life": float(f_life)}}
+                        except (ValueError, TypeError):
+                            dev_dict["device_state"] = {}
+                    else:
+                        dev_dict["device_state"] = {}
+
+                    val = dev_dict.get("measurement_current")
+                    if isinstance(val, str):
+                        try:
+                            dev_dict["measurement_current"] = json.loads(val)
+                        except Exception:
+                            dev_dict["measurement_current"] = {}
+                    elif val is None:
+                        dev_dict["measurement_current"] = {}
                     
                     dev_dict = serialize_obj(dev_dict)
                     devices_by_loc[loc].append(dev_dict)
@@ -831,7 +853,8 @@ class FleetAggregator:
 
         except Exception as e:
             logger.error(f"Error during Fleet Intelligence refresh: {e}", exc_info=True)
-            if not self.cached_summary:
+            # If we already have valid cached data, NEVER overwrite with zeroes!
+            if not self.cached_summary or not self.cached_clients:
                 self.cached_summary = {
                     "total_clients": len(self.cached_clients),
                     "total_active_devices": 0,
@@ -849,5 +872,7 @@ class FleetAggregator:
                     "execution_time_ms": 0.0,
                     "error": str(e)
                 }
+            else:
+                logger.warning("Retaining existing valid fleet cache despite refresh error.")
 
 fleet_engine = FleetAggregator()

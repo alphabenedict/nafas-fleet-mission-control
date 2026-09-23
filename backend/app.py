@@ -1,10 +1,18 @@
 import os
+import logging
+import threading
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from backend.aggregator import fleet_engine
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("fleet.app")
 
 app = FastAPI(
     title="Nafas Clean Air Zone™ Fleet Mission Control API",
@@ -20,8 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import threading
-
 @app.on_event("startup")
 def startup_event():
     # Prime cache in background thread so server becomes immediately available
@@ -31,8 +37,21 @@ def startup_event():
 def health_check():
     return {
         "status": "healthy",
+        "is_refreshing": fleet_engine._is_refreshing,
         "cache_valid": fleet_engine.is_cache_valid(),
-        "last_refreshed": fleet_engine.last_updated.isoformat() if fleet_engine.last_updated else None
+        "last_refreshed": fleet_engine.last_updated.isoformat() if fleet_engine.last_updated else None,
+        "total_active_devices": fleet_engine.cached_summary.get("total_active_devices", 0)
+    }
+
+@app.get("/api/fleet/status")
+def get_fleet_status():
+    return {
+        "is_refreshing": fleet_engine._is_refreshing,
+        "cache_valid": fleet_engine.is_cache_valid(),
+        "last_refreshed": fleet_engine.last_updated.isoformat() if fleet_engine.last_updated else None,
+        "total_clients": fleet_engine.cached_summary.get("total_clients", len(fleet_engine.cached_clients)),
+        "total_active_devices": fleet_engine.cached_summary.get("total_active_devices", 0),
+        "total_online_devices": fleet_engine.cached_summary.get("total_online_devices", 0)
     }
 
 @app.get("/api/fleet/summary")
@@ -124,10 +143,13 @@ def get_client_detail(project_id: int):
 
 @app.post("/api/fleet/refresh")
 def force_refresh():
-    fleet_engine.refresh(force=True)
+    if not fleet_engine._is_refreshing:
+        threading.Thread(target=fleet_engine._run_locked_refresh, daemon=True).start()
     return {
-        "status": "success",
-        "summary": fleet_engine.cached_summary
+        "status": "refreshing",
+        "is_refreshing": True,
+        "message": "Telemetry refresh initiated in background",
+        "last_refreshed": fleet_engine.last_updated.isoformat() if fleet_engine.last_updated else None
     }
 
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")

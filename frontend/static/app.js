@@ -72,6 +72,7 @@ function switchFleetTable(mode) {
   }
 
   populateCountryFilter();
+  renderKPIs();
   renderClientsTable();
 }
 
@@ -89,6 +90,7 @@ function updateTableTabCounts() {
 function handleCountryFilter(country) {
   fleetData.selectedCountry = country;
   fleetData.page = 1;
+  renderKPIs();
   renderClientsTable();
 }
 
@@ -172,6 +174,27 @@ async function fetchFleetData() {
     renderClientsTable();
     updateSyncTime();
 
+    // If cache is empty during initial server warm-up, poll status every 2.5s until cache is ready
+    if (!fleetData.clients || fleetData.clients.length === 0 || !fleetData.summary || !fleetData.summary.total_active_devices) {
+      const syncLabel = document.getElementById('last-sync-time');
+      if (syncLabel) syncLabel.innerText = 'Syncing fleet telemetry...';
+      if (!window._fleetPollInterval) {
+        window._fleetPollInterval = setInterval(async () => {
+          try {
+            const st = await fetch('/api/fleet/status').then(r => r.json());
+            if (st.total_active_devices > 0 || (!st.is_refreshing && st.cache_valid)) {
+              clearInterval(window._fleetPollInterval);
+              window._fleetPollInterval = null;
+              await fetchFleetData();
+            }
+          } catch (e) {}
+        }, 2500);
+      }
+    } else if (window._fleetPollInterval) {
+      clearInterval(window._fleetPollInterval);
+      window._fleetPollInterval = null;
+    }
+
     // Reset online VPN / API indicator
     const vpnEl = document.getElementById('vpn-status');
     const vpnDot = document.getElementById('vpn-dot');
@@ -209,10 +232,30 @@ async function triggerManualRefresh() {
   if (syncLabel) syncLabel.innerText = 'Syncing...';
 
   try {
-    const res = await fetch('/api/fleet/refresh', { method: 'POST' }).then(r => r.json());
-    if (res.status === 'success') {
-      await fetchFleetData();
+    await fetch('/api/fleet/refresh', { method: 'POST' }).then(r => r.json());
+
+    // Poll status until backend refresh completes
+    let seconds = 0;
+    const maxWaitSeconds = 90;
+    while (seconds < maxWaitSeconds) {
+      await new Promise(r => setTimeout(r, 2000));
+      seconds += 2;
+      try {
+        const st = await fetch('/api/fleet/status').then(r => r.json());
+        if (!st.is_refreshing) {
+          break;
+        }
+        if (syncLabel) {
+          syncLabel.innerText = `Syncing (${seconds}s)...`;
+        }
+      } catch (e) {
+        // keep polling
+      }
     }
+
+    await fetchFleetData();
+    if (syncLabel) syncLabel.innerText = 'Sync Complete';
+    setTimeout(updateSyncTime, 2500);
   } catch (err) {
     console.error('Refresh failed:', err);
     if (syncLabel) syncLabel.innerText = 'Sync Failed';
@@ -230,46 +273,133 @@ function updateSyncTime() {
   }
 }
 
-// 1. Render KPIs
+// 1. Render KPIs (Dynamic per Country Selection)
 function renderKPIs() {
-  const s = fleetData.summary;
-  const activeCount = s.active_clients_count !== undefined ? s.active_clients_count : (s.total_clients || '--');
-  const lostCount = s.lost_clients_count !== undefined ? s.lost_clients_count : 0;
+  const isAllCountries = !fleetData.selectedCountry || fleetData.selectedCountry === 'all';
+  const countryName = !isAllCountries ? fleetData.selectedCountry : 'Global';
+  const flag = !isAllCountries ? getCountryFlag(countryName) : '🌍';
+
+  let activeCount = 0;
+  let lostCount = 0;
+  let totalDevices = 0;
+  let onlineDevices = 0;
+  let offlineDevices = 0;
+  let uptimePct = 0;
+  let totalKwh = 0;
+  let paidCount = 0;
+  let unpaidCount = 0;
+  let pendingCount = 0;
+  let criticalAlertsCount = 0;
+
+  if (isAllCountries) {
+    const s = fleetData.summary || {};
+    activeCount = s.active_clients_count !== undefined ? s.active_clients_count : (s.total_clients || '--');
+    lostCount = s.lost_clients_count !== undefined ? s.lost_clients_count : 0;
+    totalDevices = s.total_active_devices !== undefined ? s.total_active_devices : '--';
+    onlineDevices = s.total_online_devices || 0;
+    offlineDevices = s.total_offline_devices || 0;
+    uptimePct = s.global_uptime_pct || 0;
+    totalKwh = s.total_fleet_kwh || 0;
+    paidCount = s.paid_clients_count || 0;
+    unpaidCount = s.unpaid_clients_count || 0;
+    pendingCount = s.pending_clients_count || 0;
+    criticalAlertsCount = s.critical_alerts_count || 0;
+  } else {
+    const targetC = countryName.trim().toLowerCase();
+    const cList = (fleetData.clients || []).filter(c => (c.country || 'Indonesia').trim().toLowerCase() === targetC);
+    
+    const activeClients = cList.filter(c => (c.project_status || 'active') === 'active');
+    const lostClients = cList.filter(c => (c.project_status || '').toLowerCase() === 'lost');
+
+    activeCount = activeClients.length;
+    lostCount = lostClients.length;
+
+    totalDevices = activeClients.reduce((acc, c) => acc + (c.device_count || 0), 0);
+    onlineDevices = activeClients.reduce((acc, c) => acc + (c.online_count || 0), 0);
+    offlineDevices = Math.max(0, totalDevices - onlineDevices);
+    uptimePct = totalDevices > 0 ? Number(((onlineDevices / totalDevices) * 100).toFixed(1)) : 0;
+    totalKwh = activeClients.reduce((acc, c) => acc + (c.total_kwh || 0), 0);
+
+    paidCount = activeClients.filter(c => c.billing_status === 'PAID').length;
+    unpaidCount = activeClients.filter(c => c.billing_status === 'OVERDUE_UNPAID').length;
+    pendingCount = activeClients.filter(c => c.billing_status === 'PAYMENT_PENDING').length;
+    criticalAlertsCount = activeClients.filter(c => c.has_critical_alert).length;
+  }
   
-  document.getElementById('kpi-clients').innerText = activeCount;
+  // 1. Active Clients Card
+  const cEl = document.getElementById('kpi-clients');
+  if (cEl) cEl.innerText = activeCount;
+
   const clientsSub = document.getElementById('kpi-clients-sub');
   if (clientsSub) {
-    clientsSub.innerText = `${activeCount} Active • ${lostCount} Lost`;
+    if (isAllCountries) {
+      clientsSub.innerText = `${activeCount} Active • ${lostCount} Lost`;
+    } else {
+      clientsSub.innerText = `${flag} ${countryName}: ${activeCount} Active • ${lostCount} Lost`;
+    }
   }
 
-  document.getElementById('kpi-devices').innerText = s.total_active_devices || '--';
-  document.getElementById('kpi-device-sub').innerText = `${s.total_online_devices || 0} Online / ${s.total_offline_devices || 0} Offline`;
-  
-  const uptimeEl = document.getElementById('kpi-uptime');
-  uptimeEl.innerText = `${s.global_uptime_pct || 0}%`;
-  if (s.global_uptime_pct >= 90) uptimeEl.className = 'text-2xl font-bold text-[#91C851] mt-1 font-mono tracking-tight';
-  else if (s.global_uptime_pct >= 75) uptimeEl.className = 'text-2xl font-bold text-amber-400 mt-1 font-mono tracking-tight';
-  else uptimeEl.className = 'text-2xl font-bold text-rose-400 mt-1 font-mono tracking-tight';
+  // 2. Deployed Devices Card
+  const dEl = document.getElementById('kpi-devices');
+  if (dEl) dEl.innerText = totalDevices;
 
-  // Total Energy kWh
+  const dSub = document.getElementById('kpi-device-sub');
+  if (dSub) {
+    dSub.innerText = `${onlineDevices} Online / ${offlineDevices} Offline`;
+  }
+  
+  // 3. Fleet Uptime (SLA) Card
+  const uptimeTitle = document.getElementById('kpi-uptime-title');
+  if (uptimeTitle) {
+    uptimeTitle.innerText = isAllCountries ? 'Fleet Uptime (SLA)' : `${flag} ${countryName} Uptime (SLA)`;
+  }
+
+  const uptimeEl = document.getElementById('kpi-uptime');
+  if (uptimeEl) {
+    uptimeEl.innerText = `${uptimePct}%`;
+    if (uptimePct >= 90) uptimeEl.className = 'text-2xl font-bold text-[#91C851] mt-2 font-mono tracking-tight';
+    else if (uptimePct >= 75) uptimeEl.className = 'text-2xl font-bold text-amber-400 mt-2 font-mono tracking-tight';
+    else uptimeEl.className = 'text-2xl font-bold text-rose-400 mt-2 font-mono tracking-tight';
+  }
+
+  const uptimeSub = document.getElementById('kpi-uptime-sub');
+  if (uptimeSub) {
+    if (isAllCountries) {
+      uptimeSub.innerText = 'Global Fleet Target: >95.0%';
+    } else {
+      uptimeSub.innerText = `${flag} ${countryName} Target: >95.0% (${onlineDevices}/${totalDevices} online)`;
+    }
+  }
+
+  // 4. Total Energy kWh
   const kwhEl = document.getElementById('kpi-kwh');
   if (kwhEl) {
-    kwhEl.innerText = `${(s.total_fleet_kwh || 0).toLocaleString()} kWh`;
+    kwhEl.innerText = `${Math.round(totalKwh).toLocaleString()} kWh`;
   }
 
-  // Billing KPI
+  const kwhSub = document.getElementById('kpi-kwh-sub');
+  if (kwhSub) {
+    if (isAllCountries) {
+      kwhSub.innerText = 'Cumulative Telemetry kWh';
+    } else {
+      kwhSub.innerText = `${flag} ${countryName} Telemetry kWh`;
+    }
+  }
+
+  // Billing KPI (if present)
   const billEl = document.getElementById('kpi-billing');
   const billSub = document.getElementById('kpi-billing-sub');
   const unpaidDot = document.getElementById('kpi-unpaid-dot');
   if (billEl) {
-    billEl.innerText = `${s.paid_clients_count || 0} Paid`;
-    billSub.innerText = `${s.unpaid_clients_count || 0} Overdue / ${s.pending_clients_count || 0} Pending`;
-    if (s.unpaid_clients_count > 0 && unpaidDot) {
+    billEl.innerText = `${paidCount} Paid`;
+    if (billSub) billSub.innerText = `${unpaidCount} Overdue / ${pendingCount} Pending`;
+    if (unpaidCount > 0 && unpaidDot) {
       unpaidDot.classList.remove('hidden');
     }
   }
 
-  document.getElementById('kpi-critical').innerText = s.critical_alerts_count || '0';
+  const critEl = document.getElementById('kpi-critical');
+  if (critEl) critEl.innerText = criticalAlertsCount;
 }
 
 // 2. Render Bad Alert Triage Center
@@ -364,7 +494,6 @@ function handleTableSearch(query) {
   if (headerInput && headerInput.value !== query) headerInput.value = query;
   const tableInput = document.getElementById('search-input');
   if (tableInput && tableInput.value !== query) tableInput.value = query;
-  }
 
   renderClientsTable();
 }
