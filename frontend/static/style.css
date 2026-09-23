@@ -86,6 +86,15 @@
   background: hsl(var(--muted-foreground) / 0.5);
 }
 
+/* Collapsible Sidebar Support (Antigravity-style Toggle) */
+body.sidebar-collapsed #app-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+body.sidebar-collapsed #app-sidebar {
+  display: none !important;
+}
+
 /* Replit UI component standard classes */
 .badge-default {
   display: inline-flex;

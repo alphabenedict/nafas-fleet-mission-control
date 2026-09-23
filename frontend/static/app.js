@@ -176,6 +176,25 @@ function populateCountryFilter() {
   }
 }
 
+// Sidebar Toggle (Antigravity-style Collapse / Expand)
+function toggleSidebar() {
+  const isCollapsed = document.body.classList.toggle('sidebar-collapsed');
+  localStorage.setItem('nafas-sidebar-collapsed', isCollapsed ? 'true' : 'false');
+  updateSidebarToggleBtn(isCollapsed);
+}
+
+function updateSidebarToggleBtn(isCollapsed) {
+  const btns = document.querySelectorAll('.sidebar-toggle-btn');
+  btns.forEach(btn => {
+    btn.setAttribute('title', isCollapsed ? 'Expand Sidebar (⌘B)' : 'Collapse Sidebar (⌘B)');
+    if (isCollapsed) {
+      btn.classList.add('text-primary', 'bg-primary/10', 'border-primary/40');
+    } else {
+      btn.classList.remove('text-primary', 'bg-primary/10', 'border-primary/40');
+    }
+  });
+}
+
 function toggleTheme() {
   const isDark = document.documentElement.classList.toggle('dark');
   localStorage.setItem('nafas-theme', isDark ? 'dark' : 'light');
@@ -195,6 +214,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const icon = document.getElementById('theme-icon');
     if (icon) icon.innerText = '☀️';
   }
+
+  // Restore sidebar collapsed preference
+  const sidebarSaved = localStorage.getItem('nafas-sidebar-collapsed');
+  if (sidebarSaved === 'true') {
+    document.body.classList.add('sidebar-collapsed');
+    updateSidebarToggleBtn(true);
+  }
+
+  // Keyboard shortcut: Cmd+B or Ctrl+B to toggle sidebar
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      e.preventDefault();
+      toggleSidebar();
+    }
+  });
 
   fetchFleetData();
   // Auto-refresh every 60 seconds
