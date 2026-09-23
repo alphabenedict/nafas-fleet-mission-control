@@ -95,6 +95,15 @@ body.sidebar-collapsed #app-sidebar {
   display: none !important;
 }
 
+/* Ensure only 1 button is ever visible at a time (like Antigravity) */
+body:not(.sidebar-collapsed) #sidebar-expand-btn {
+  display: none !important;
+}
+
+body.sidebar-collapsed #sidebar-expand-btn {
+  display: inline-flex !important;
+}
+
 /* Replit UI component standard classes */
 .badge-default {
   display: inline-flex;

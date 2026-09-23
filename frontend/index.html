@@ -70,7 +70,7 @@
     };
   </script>
   <link rel="icon" type="image/png" href="/static/nafas-logo.png">
-  <link rel="stylesheet" href="/static/style.css?v=20260923e">
+  <link rel="stylesheet" href="/static/style.css?v=20260923f">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 </head>
@@ -94,6 +94,7 @@
             </div>
           </div>
           <button 
+            id="sidebar-collapse-btn"
             onclick="toggleSidebar()" 
             class="sidebar-toggle-btn inline-flex items-center justify-center size-7 rounded-lg border border-sidebar-border text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors cursor-pointer"
             title="Collapse Sidebar (⌘B)"
@@ -202,10 +203,11 @@
       <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
         <div class="flex items-center gap-3.5">
           <button 
+            id="sidebar-expand-btn"
             onclick="toggleSidebar()" 
             class="sidebar-toggle-btn inline-flex items-center justify-center size-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer flex-shrink-0"
-            title="Toggle Sidebar (⌘B)"
-            aria-label="Toggle Sidebar"
+            title="Expand Sidebar (⌘B)"
+            aria-label="Expand Sidebar"
           >
             <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect width="18" height="18" x="3" y="3" rx="3"></rect>
