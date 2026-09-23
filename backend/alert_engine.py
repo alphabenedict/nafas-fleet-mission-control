@@ -68,7 +68,8 @@ class AlertEngine:
 
         # 3. Rule: Environmental Breach (PM2.5 > 25 ug/m3 or CO2 > 1200 ppm)
         for room_name, devs in room_devices.items():
-            monitors = [d for d in devs if d.get("category_code") == "airmon"]
+            active_devs = [d for d in devs if not d.get("is_takeout") and d.get("erp_status") != "Takeout"]
+            monitors = [d for d in active_devs if d.get("category_code") == "airmon"]
             for m in monitors:
                 meas = m.get("measurement_current", {})
                 pm25 = meas.get("pm25")
@@ -104,7 +105,8 @@ class AlertEngine:
 
         # 4. Rule: Filter Depletion (Filter life < 15%)
         for room_name, devs in room_devices.items():
-            purifiers = [d for d in devs if d.get("category_code") == "airpure"]
+            active_devs = [d for d in devs if not d.get("is_takeout") and d.get("erp_status") != "Takeout"]
+            purifiers = [d for d in active_devs if d.get("category_code") == "airpure"]
             for p in purifiers:
                 state = p.get("device_state", {})
                 filt = state.get("filter", {})
@@ -125,7 +127,8 @@ class AlertEngine:
 
         # 5. Rule: Electrical & Motor Health Anomaly
         for room_name, devs in room_devices.items():
-            purifiers = [d for d in devs if d.get("category_code") == "airpure"]
+            active_devs = [d for d in devs if not d.get("is_takeout") and d.get("erp_status") != "Takeout"]
+            purifiers = [d for d in active_devs if d.get("category_code") == "airpure"]
             for p in purifiers:
                 speed = p.get("speed") or 0
                 kwh = p.get("total_powerconsumption") or 0.0
