@@ -344,6 +344,7 @@ function renderKPIs() {
   let criticalAlertsCount = 0;
 
   let totalStandby = 0;
+  let takeoutTotal = 0;
 
   if (isAllCountries) {
     const s = fleetData.summary || {};
@@ -352,6 +353,7 @@ function renderKPIs() {
     totalDevices = s.total_active_devices !== undefined ? s.total_active_devices : '--';
     onlineDevices = s.total_online_devices || 0;
     totalStandby = s.total_standby_devices || 0;
+    takeoutTotal = s.total_takeout_devices || 0;
     offlineDevices = s.total_offline_devices || 0;
     uptimePct = s.global_uptime_pct || 0;
     totalKwh = s.total_fleet_kwh || 0;
@@ -372,6 +374,7 @@ function renderKPIs() {
     totalDevices = activeClients.reduce((acc, c) => acc + (c.device_count || 0), 0);
     onlineDevices = activeClients.reduce((acc, c) => acc + (c.online_count || 0), 0);
     totalStandby = activeClients.reduce((acc, c) => acc + (c.standby_count || 0), 0);
+    takeoutTotal = activeClients.reduce((acc, c) => acc + (c.takeout_count || 0), 0);
     offlineDevices = Math.max(0, totalDevices - onlineDevices);
     const compliantDevices = onlineDevices + totalStandby;
     uptimePct = totalDevices > 0 ? Number(((compliantDevices / totalDevices) * 100).toFixed(1)) : 0;
@@ -402,9 +405,6 @@ function renderKPIs() {
 
   const dSub = document.getElementById('kpi-device-sub');
   if (dSub) {
-    const takeoutTotal = isAllCountries 
-      ? (fleetData.summary?.total_takeout_devices || 0)
-      : activeClients.reduce((acc, c) => acc + (c.takeout_count || 0), 0);
     const takeoutNotice = takeoutTotal > 0 ? ` • ${takeoutTotal} Takeout Excluded` : '';
     dSub.innerText = `${onlineDevices} Online / ${offlineDevices} Offline${takeoutNotice}`;
   }
