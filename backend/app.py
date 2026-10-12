@@ -152,6 +152,90 @@ def force_refresh():
         "last_refreshed": fleet_engine.last_updated.isoformat() if fleet_engine.last_updated else None
     }
 
+@app.get("/api/tactical/summary")
+def get_tactical_summary():
+    try:
+        from backend.database import get_tactical_pg_connection
+        import psycopg2.extras
+        conn = get_tactical_pg_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        cur.execute("""
+            SELECT 
+                COUNT(*) as total_deals,
+                COUNT(DISTINCT client_id) as total_clients,
+                COALESCE(SUM(CASE WHEN pipeline_stage = '6. Closed Won (Installed)' THEN mrr ELSE 0 END), 0) as won_mrr,
+                COALESCE(SUM(CASE WHEN pipeline_stage = '6. Closed Won (Installed)' THEN tcv ELSE 0 END), 0) as won_tcv,
+                COUNT(CASE WHEN pipeline_stage = '6. Closed Won (Installed)' THEN 1 END) as won_deals,
+                COUNT(CASE WHEN pipeline_stage = '7. Closed Lost' THEN 1 END) as lost_deals,
+                COUNT(CASE WHEN pipeline_stage NOT IN ('6. Closed Won (Installed)', '7. Closed Lost') THEN 1 END) as active_pipeline_deals
+            FROM deals;
+        """)
+        summary = cur.fetchone()
+        
+        cur.execute("""
+            SELECT pipeline_stage, COUNT(*) as count, 
+                   COALESCE(SUM(mrr), 0) as total_mrr, 
+                   COALESCE(SUM(tcv), 0) as total_tcv
+            FROM deals
+            GROUP BY pipeline_stage
+            ORDER BY count DESC;
+        """)
+        stages = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        return {
+            "status": "success",
+            "summary": summary,
+            "pipeline_stages": stages
+        }
+    except Exception as e:
+        logger.error(f"Error fetching tactical summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tactical/deals")
+def get_tactical_deals(stage: Optional[str] = None, search: Optional[str] = None, limit: int = 100):
+    try:
+        from backend.database import get_tactical_pg_connection
+        import psycopg2.extras
+        conn = get_tactical_pg_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        query = """
+            SELECT d.id, d.client_id, c.client_name, c.client_segment, c.city,
+                   d.project_name, d.pipeline_stage, d.account_stage, d.priority,
+                   d.solutions_type, d.purchase_type, d.bd_closer, d.account_manager,
+                   d.contract_months, d.mrr, d.tcv
+            FROM deals d
+            LEFT JOIN clients c ON d.client_id = c.id
+            WHERE 1=1
+        """
+        params = []
+        if stage:
+            query += " AND d.pipeline_stage = %s"
+            params.append(stage)
+        if search:
+            query += " AND (c.client_name ILIKE %s OR d.project_name ILIKE %s)"
+            params.extend([f"%{search}%", f"%{search}%"])
+            
+        query += " ORDER BY d.id DESC LIMIT %s;"
+        params.append(limit)
+        
+        cur.execute(query, tuple(params))
+        deals = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        return {
+            "status": "success",
+            "count": len(deals),
+            "deals": deals
+        }
+    except Exception as e:
+        logger.error(f"Error fetching tactical deals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=os.path.join(frontend_dir, "static")), name="static")

@@ -21,6 +21,15 @@ PG_PASSWORD = os.getenv("PG_PASSWORD", "Ym94rWsLLNcRWRsD")
 PG_DB = os.getenv("PG_DB", "neondb")
 PG_SSLMODE = os.getenv("PG_SSLMODE", "disable")
 
+# Tactical Sheet CRM (NeonDB Cloud Postgres)
+TACTICAL_PG_URI = os.getenv("TACTICAL_PG_URI", "postgresql://neondb_owner:npg_VfYxuqoI9M2t@ep-misty-unit-b3sok8d2.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require")
+TACTICAL_PG_HOST = os.getenv("TACTICAL_PG_HOST", "ep-misty-unit-b3sok8d2.c-4.ap-southeast-1.aws.neon.tech")
+TACTICAL_PG_PORT = int(os.getenv("TACTICAL_PG_PORT", 5432))
+TACTICAL_PG_USER = os.getenv("TACTICAL_PG_USER", "neondb_owner")
+TACTICAL_PG_PASSWORD = os.getenv("TACTICAL_PG_PASSWORD", "npg_VfYxuqoI9M2t")
+TACTICAL_PG_DB = os.getenv("TACTICAL_PG_DB", "neondb")
+TACTICAL_PG_SSLMODE = os.getenv("TACTICAL_PG_SSLMODE", "require")
+
 MONGO_HOST = os.getenv("MONGO_HOST", "20.24.141.186")
 MONGO_PORT = int(os.getenv("MONGO_PORT", 27017))
 MONGO_USER = os.getenv("MONGO_USER", "alpha_readonly")
@@ -49,6 +58,30 @@ def get_pg_connection():
         password=PG_PASSWORD,
         dbname=PG_DB,
         sslmode=PG_SSLMODE,
+        connect_timeout=30,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5
+    )
+
+def get_tactical_pg_connection():
+    if TACTICAL_PG_URI:
+        return psycopg2.connect(
+            TACTICAL_PG_URI,
+            connect_timeout=30,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5
+        )
+    return psycopg2.connect(
+        host=TACTICAL_PG_HOST,
+        port=TACTICAL_PG_PORT,
+        user=TACTICAL_PG_USER,
+        password=TACTICAL_PG_PASSWORD,
+        dbname=TACTICAL_PG_DB,
+        sslmode=TACTICAL_PG_SSLMODE,
         connect_timeout=30,
         keepalives=1,
         keepalives_idle=30,
