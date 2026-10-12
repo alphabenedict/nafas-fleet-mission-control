@@ -65,11 +65,18 @@ docker compose logs -f
 
 ```
 ┌──────────────────────────────────────┐     ┌──────────────────────────────────────┐
-│       MySQL Prod (Telemetry)        │     │       NeonDB (Mini-ERP & CRM)        │
-│  • tb_mydevice (6.8k+ devices)       │     │  • projects (279 active CAZ)         │
-│  • tb_mydevice_measurement_hourly    │     │  • clients (B2B & B2C accounts)      │
-│  • tb_mydevice_power_hourly          │     │  • project_milestones (Filter Dates) │
-│  • tb_role_location / tb_role_room   │     │  • fieldwork_reports (Service Logs)  │
+│       MySQL Prod (Telemetry)        │     │       NeonDB (Mini-ERP Operations)   │
+│  • tb_mydevice (3.5k+ active IoT)    │     │  • projects (295 client deployments) │
+│  • tb_mydevice_measurement_hourly    │     │  • rooms & dimensions (CADR/m³)      │
+│  • tb_mydevice_power_hourly (kWh)    │     │  • devices (6.7k+ serial mappings)   │
+│  • tb_associate_outdoor              │     │  • project_milestones (Filter Dates) │
+└──────────────────┬───────────────────┘     └──────────────────┬───────────────────┘
+                   │                                            │
+┌──────────────────▼───────────────────┐     ┌──────────────────▼───────────────────┐
+│       MongoDB (Billing & Finance)    │     │    NeonDB Cloud (Tactical CRM)       │
+│  • invoices (2,620 billed invoices)  │     │  • deals (915 sales opportunities)   │
+│  • PAID vs OVERDUE status            │     │  • clients (693 company accounts)    │
+│  • Payment gateway receipts          │     │  • contacts (487 key stakeholders)   │
 └──────────────────┬───────────────────┘     └──────────────────┬───────────────────┘
                    │                                            │
                    └─────────────────────┬──────────────────────┘
@@ -81,6 +88,7 @@ docker compose logs -f
                     │  • Real-time connectivity & SLA scoring │
                     │  • Multi-factor Bad Alert Engine        │
                     │  • Maintenance cycle auto-projector     │
+                    │  • Tactical Sales CRM pipeline sync     │
                     └────────────────────┬────────────────────┘
                                          │
                     ┌────────────────────▼────────────────────┐
@@ -90,6 +98,7 @@ docker compose logs -f
                     │  • Alert Triage Center                  │
                     │  • Client Fleet Directory               │
                     │  • Room Telemetry & Maintenance Drawer  │
+                    │  • Tactical Sales CRM Summary & Deals   │
                     └─────────────────────────────────────────┘
 ```
 
@@ -99,12 +108,14 @@ docker compose logs -f
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | Healthcheck and cache status |
+| `GET` | `/health` | Healthcheck and telemetry cache status |
 | `GET` | `/api/fleet/summary` | Top-level KPI counts, global SLA uptime %, and alert totals |
 | `GET` | `/api/fleet/alerts` | Active Bad Alert feed (Critical & Warning) |
 | `GET` | `/api/fleet/clients` | Filterable client directory with search, status, and maintenance dates |
 | `GET` | `/api/fleet/client/{project_id}` | Detailed client breakdown (rooms, devices, milestones, reports) |
 | `POST` | `/api/fleet/refresh` | Force-sync telemetry cache from live databases |
+| `GET` | `/api/tactical/summary` | Live tactical sales pipeline metrics (Won MRR, TCV, deal stages) |
+| `GET` | `/api/tactical/deals` | Filterable tactical deals directory (`?stage=...&search=...`) |
 
 ---
 
@@ -112,13 +123,19 @@ docker compose logs -f
 
 | Variable | Default | Description |
 |---|---|---|
-| `MYSQL_HOST` | `20.195.112.209` | MySQL Prod host |
+| `MYSQL_HOST` | `20.195.112.209` | MySQL Prod ProxySQL host |
 | `MYSQL_PORT` | `6033` | MySQL Prod port |
 | `MYSQL_DB` | `nafas_mydevice` | Device telemetry database |
-| `PG_HOST` | `4.144.141.244` | NeonDB PostgreSQL host |
-| `PG_PORT` | `5432` | NeonDB port |
-| `PG_DB` | `neondb` | Mini-ERP database |
-| `CACHE_TTL_SECONDS` | `60` | In-memory cache validity window |
+| `PG_HOST` | `4.144.141.244` | NeonDB Mini-ERP PostgreSQL host (Azure replica) |
+| `PG_PORT` | `5432` | NeonDB Mini-ERP port |
+| `PG_DB` | `neondb` | Mini-ERP operational database |
+| `MONGO_HOST` | `20.24.141.186` | MongoDB host |
+| `MONGO_PORT` | `27017` | MongoDB port |
+| `MONGO_DB` | `billing` | Financial invoices database |
+| `TACTICAL_PG_URI` | `postgresql://...` | Tactical Sheet NeonDB connection string |
+| `TACTICAL_PG_HOST` | `ep-misty-unit...` | Tactical Sheet NeonDB host |
+| `TACTICAL_PG_DB` | `neondb` | Tactical Sheet CRM database |
+| `CACHE_TTL_SECONDS` | `300` | In-memory cache validity window |
 
 ---
 
